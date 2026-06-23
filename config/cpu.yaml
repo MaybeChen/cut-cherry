@@ -1,0 +1,10 @@
+runtime:
+  device: cpu
+pipeline:
+  enable_sam3: false
+  enable_vlm: false
+models:
+  sam3:
+    enabled: false
+  vlm:
+    enabled: false
