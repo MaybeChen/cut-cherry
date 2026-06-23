@@ -1,0 +1,83 @@
+[tool.poetry]
+name = "image2pptx-service"
+version = "0.1.0"
+description = "Image and PDF page to editable PPTX service"
+authors = ["Team"]
+readme = "README.md"
+packages = [{include = "image2pptx", from = "src"}]
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.13"
+fastapi = "*"
+uvicorn = {extras = ["standard"], version = "*"}
+pydantic = "*"
+pydantic-settings = "*"
+pyyaml = "*"
+python-multipart = "*"
+opencv-python = "*"
+numpy = "*"
+pillow = "*"
+scikit-image = "*"
+scipy = "*"
+lxml = "*"
+python-pptx = "*"
+httpx = "*"
+tenacity = "*"
+rich = "*"
+typer = "*"
+structlog = "*"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "*"
+pytest-cov = "*"
+pytest-asyncio = "*"
+ruff = "*"
+mypy = "*"
+pre-commit = "*"
+
+[tool.poetry.group.ocr]
+optional = true
+[tool.poetry.group.ocr.dependencies]
+paddleocr = "*"
+paddlepaddle = "*"
+
+[tool.poetry.group.gpu]
+optional = true
+[tool.poetry.group.gpu.dependencies]
+paddlepaddle-gpu = "*"
+onnxruntime-gpu = "*"
+
+[tool.poetry.group.segmentation]
+optional = true
+[tool.poetry.group.segmentation.dependencies]
+torch = "*"
+torchvision = "*"
+segment-anything = "*"
+
+[tool.poetry.group.vlm]
+optional = true
+[tool.poetry.group.vlm.dependencies]
+transformers = "*"
+accelerate = "*"
+
+[tool.poetry.group.background-removal]
+optional = true
+[tool.poetry.group.background-removal.dependencies]
+onnxruntime = "*"
+
+[tool.poetry.scripts]
+image2pptx = "image2pptx.cli.main:app"
+image2pptx-api = "image2pptx.api.app:main"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+strict = false
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
