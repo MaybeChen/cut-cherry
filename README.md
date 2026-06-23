@@ -193,3 +193,6 @@ PP-OCRv6 推荐搭配 PaddleOCR 3.x 使用；如需使用 PaddleOCR 2.x，请改
 CLI 转换完成后会打印 OCR 状态、识别条数、`ocr_results.json` 路径，并在识别成功时输出前 100 条识别文本、置信度和 bbox。
 
 PaddleOCR 3.x 离线本地模型建议同时配置模型名与模型目录，例如 `det_model_name: PP-OCRv6_medium_det` 搭配 `det_model_dir: models/ocr/ppocrv6_medium_det`。当显式配置本地模型名或目录时，本工程不会向 PaddleOCR 3.x 继续传入 `lang`，以避免启动时出现 `lang and ocr_version will be ignored` 警告；方向分类模型名也固定为 `PP-LCNet_x0_25_textline_ori`，避免默认创建 `PP-LCNet_x1_0_textline_ori`。
+
+
+如果 CLI 输出 `local_ocr_model_mismatch`，例如 detection 目录期望 `PP-OCRv6_medium_det` 但发现 `PP-OCRv6_medium_rec`，说明模型文件放错目录：请重新检查 `models/ocr/ppocrv6_medium_det/`、`models/ocr/ppocrv6_medium_rec/`、`models/ocr/pp_lcnet_x0_25_textline_ori/` 里的 `inference.yml` / `inference.json` 是否来自对应模型仓库。检测模型、识别模型和方向分类模型不能互换目录。

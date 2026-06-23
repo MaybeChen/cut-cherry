@@ -38,6 +38,13 @@ class TextProcessor:
             _write_ocr_report(ctx, status="skipped", warnings=ctx.candidates["text_warnings"])
             return
 
+        model_mismatches = _validate_local_model_names(ocr_config)
+        if model_mismatches:
+            ctx.candidates["text"] = blocks
+            ctx.candidates["text_warnings"] = model_mismatches
+            _write_ocr_report(ctx, status="failed", warnings=model_mismatches)
+            return
+
         _prepare_paddle_runtime_logs()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message=".*No ccache found.*")
@@ -74,6 +81,67 @@ class TextProcessor:
             status="succeeded" if ctx.candidates["text"] else "empty",
             warnings=ocr_warnings,
         )
+
+
+def _validate_local_model_names(ocr_config: dict[str, Any]) -> list[dict[str, Any]]:
+    checks = (
+        ("det_model_dir", "det_model_name", "text detection"),
+        ("rec_model_dir", "rec_model_name", "text recognition"),
+        ("cls_model_dir", "cls_model_name", "text line orientation"),
+    )
+    mismatches: list[dict[str, Any]] = []
+    for dir_key, name_key, role in checks:
+        model_dir = ocr_config.get(dir_key)
+        expected_name = ocr_config.get(name_key)
+        if not model_dir or not expected_name:
+            continue
+        metadata = _read_model_metadata(Path(str(model_dir)))
+        if not metadata:
+            continue
+        if str(expected_name) in metadata:
+            continue
+        known_name = _find_known_model_name(metadata)
+        if known_name:
+            mismatches.append(
+                {
+                    "reason": "local_ocr_model_mismatch",
+                    "role": role,
+                    "model_dir": str(model_dir),
+                    "expected_model_name": str(expected_name),
+                    "found_model_name": known_name,
+                    "message": (
+                        f"{model_dir} contains {known_name}, but {role} expects "
+                        f"{expected_name}. Put the correct downloaded model files in this folder."
+                    ),
+                }
+            )
+    return mismatches
+
+
+def _read_model_metadata(model_dir: Path) -> str:
+    chunks: list[str] = []
+    for file_name in ("inference.yml", "inference.yaml", "inference.json"):
+        path = model_dir / file_name
+        if path.exists() and path.is_file():
+            chunks.append(path.read_text(encoding="utf-8", errors="ignore"))
+    return "\n".join(chunks)
+
+
+def _find_known_model_name(metadata: str) -> str | None:
+    known_names = (
+        "PP-OCRv6_medium_det",
+        "PP-OCRv6_medium_rec",
+        "PP-OCRv6_small_det",
+        "PP-OCRv6_small_rec",
+        "PP-OCRv6_tiny_det",
+        "PP-OCRv6_tiny_rec",
+        "PP-LCNet_x0_25_textline_ori",
+        "PP-LCNet_x1_0_textline_ori",
+    )
+    for name in known_names:
+        if name in metadata:
+            return name
+    return None
 
 
 def _prepare_paddle_runtime_logs() -> None:

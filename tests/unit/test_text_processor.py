@@ -121,3 +121,22 @@ def test_text_processor_import_warning_module_is_not_shadowed(tmp_path, monkeypa
 
     assert ctx.candidates["text"][0]["text"] == "OK"
     assert (tmp_path / "ocr_results.json").exists()
+
+
+def test_validate_local_model_names_reports_det_rec_folder_mixup(tmp_path):
+    from image2pptx.processors.text_processor import _validate_local_model_names
+
+    det_dir = tmp_path / "ppocrv6_medium_det"
+    det_dir.mkdir()
+    (det_dir / "inference.yml").write_text("model_name: PP-OCRv6_medium_rec\n", encoding="utf-8")
+
+    warnings = _validate_local_model_names(
+        {
+            "det_model_dir": str(det_dir),
+            "det_model_name": "PP-OCRv6_medium_det",
+        }
+    )
+
+    assert warnings[0]["reason"] == "local_ocr_model_mismatch"
+    assert warnings[0]["expected_model_name"] == "PP-OCRv6_medium_det"
+    assert warnings[0]["found_model_name"] == "PP-OCRv6_medium_rec"
