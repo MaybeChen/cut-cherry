@@ -1,0 +1,4 @@
+runtime:
+  device: cuda
+pipeline:
+  enable_sam3: true

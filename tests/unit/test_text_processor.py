@@ -1,0 +1,64 @@
+from image2pptx.processors.text_processor import (
+    _build_v2_kwargs,
+    _build_v3_kwargs,
+    _create_paddleocr,
+    _normalize_ocr_result,
+)
+
+
+def test_paddleocr_v3_kwargs_do_not_use_legacy_use_gpu():
+    kwargs = _build_v3_kwargs(
+        {
+            "lang": "ch",
+            "det_model_name": "PP-OCRv6_medium_det",
+            "rec_model_name": "PP-OCRv6_medium_rec",
+            "cls_model_name": "PP-LCNet_x0_25_textline_ori",
+            "det_model_dir": "models/ocr/ppocrv6_medium_det",
+            "rec_model_dir": "models/ocr/ppocrv6_medium_rec",
+            "cls_model_dir": "models/ocr/pp_lcnet_x0_25_textline_ori",
+        },
+        "cpu",
+    )
+    assert kwargs["device"] == "cpu"
+    assert "use_gpu" not in kwargs
+    assert "lang" not in kwargs
+    assert kwargs["text_detection_model_name"] == "PP-OCRv6_medium_det"
+    assert kwargs["text_detection_model_dir"] == "models/ocr/ppocrv6_medium_det"
+    assert kwargs["textline_orientation_model_name"] == "PP-LCNet_x0_25_textline_ori"
+
+
+def test_paddleocr_v2_kwargs_keep_legacy_use_gpu_for_old_versions():
+    kwargs = _build_v2_kwargs({"lang": "ch"}, "cuda")
+    assert kwargs["use_gpu"] is True
+    assert "device" not in kwargs
+
+
+def test_create_paddleocr_falls_back_when_v3_rejects_argument():
+    calls = []
+
+    class FakePaddleOCR:
+        def __init__(self, **kwargs):
+            calls.append(kwargs)
+            if "device" in kwargs:
+                raise ValueError("Unknown argument: device")
+
+    instance, api_version, warnings = _create_paddleocr(FakePaddleOCR, {"lang": "ch"}, "cpu")
+    assert instance is not None
+    assert api_version == "v2"
+    assert warnings[0]["reason"] == "paddleocr_v3_init_failed"
+    assert "use_gpu" in calls[1]
+
+
+def test_normalize_paddleocr_v3_predict_result_dict():
+    result = [
+        {
+            "res": {
+                "rec_texts": [" Hello   OCR "],
+                "rec_scores": [0.98],
+                "rec_polys": [[[1, 2], [11, 2], [11, 7], [1, 7]]],
+            }
+        }
+    ]
+    blocks = _normalize_ocr_result(result)
+    assert blocks[0]["text"] == "Hello OCR"
+    assert blocks[0]["bbox"] == [1.0, 2.0, 11.0, 7.0]
