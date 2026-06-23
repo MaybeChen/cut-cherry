@@ -80,3 +80,44 @@ def test_write_ocr_report_records_status_and_items(tmp_path):
     assert report_path.exists()
     assert ctx.artifacts["ocr_results"] == report_path
     assert "识别成功" in report_path.read_text(encoding="utf-8")
+
+
+def test_text_processor_import_warning_module_is_not_shadowed(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import image2pptx.processors.text_processor as text_processor
+
+    class FakeOcr:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def predict(self, path):
+            return [
+                {
+                    "res": {
+                        "rec_texts": ["OK"],
+                        "rec_scores": [0.9],
+                        "rec_polys": [[[0, 0], [10, 0], [10, 5], [0, 5]]],
+                    }
+                }
+            ]
+
+    fake_module = SimpleNamespace(PaddleOCR=FakeOcr)
+    monkeypatch.setattr(text_processor.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(text_processor.importlib, "import_module", lambda name: fake_module)
+
+    normalized = tmp_path / "normalized.png"
+    normalized.write_bytes(b"fake")
+    ctx = SimpleNamespace(
+        job_id="job123",
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        candidates={},
+        settings=SimpleNamespace(models=SimpleNamespace(ocr={"allow_auto_download": True})),
+        device="cpu",
+    )
+
+    text_processor.TextProcessor().run(ctx)
+
+    assert ctx.candidates["text"][0]["text"] == "OK"
+    assert (tmp_path / "ocr_results.json").exists()

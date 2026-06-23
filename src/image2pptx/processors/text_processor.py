@@ -43,11 +43,11 @@ class TextProcessor:
             warnings.filterwarnings("ignore", message=".*No ccache found.*")
             paddleocr_module = importlib.import_module("paddleocr")
         paddleocr_cls = getattr(paddleocr_module, "PaddleOCR")
-        ocr, api_version, warnings = _create_paddleocr(paddleocr_cls, ocr_config, ctx.device)
+        ocr, api_version, ocr_warnings = _create_paddleocr(paddleocr_cls, ocr_config, ctx.device)
         if ocr is None:
             ctx.candidates["text"] = blocks
-            ctx.candidates["text_warnings"] = warnings
-            _write_ocr_report(ctx, status="failed", warnings=warnings)
+            ctx.candidates["text_warnings"] = ocr_warnings
+            _write_ocr_report(ctx, status="failed", warnings=ocr_warnings)
             return
 
         try:
@@ -67,12 +67,12 @@ class TextProcessor:
             return
 
         ctx.candidates["text"] = _normalize_ocr_result(result)
-        if warnings:
-            ctx.candidates["text_warnings"] = warnings
+        if ocr_warnings:
+            ctx.candidates["text_warnings"] = ocr_warnings
         _write_ocr_report(
             ctx,
             status="succeeded" if ctx.candidates["text"] else "empty",
-            warnings=warnings,
+            warnings=ocr_warnings,
         )
 
 
