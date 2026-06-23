@@ -83,7 +83,6 @@ def _create_paddleocr(
 
 def _build_v3_kwargs(ocr_config: dict[str, Any], device: str) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
-        "lang": ocr_config.get("lang", "ch"),
         "device": "gpu" if device == "cuda" else "cpu",
         "use_doc_orientation_classify": False,
         "use_doc_unwarping": False,
@@ -93,10 +92,21 @@ def _build_v3_kwargs(ocr_config: dict[str, Any], device: str) -> dict[str, Any]:
         "det_model_dir": "text_detection_model_dir",
         "rec_model_dir": "text_recognition_model_dir",
         "cls_model_dir": "textline_orientation_model_dir",
+        "det_model_name": "text_detection_model_name",
+        "rec_model_name": "text_recognition_model_name",
+        "cls_model_name": "textline_orientation_model_name",
     }
+    has_explicit_model = False
     for config_key, paddle_key in path_map.items():
         if value := ocr_config.get(config_key):
             kwargs[paddle_key] = str(value)
+            has_explicit_model = True
+
+    # PaddleOCR 3.x warns that lang/ocr_version are ignored whenever explicit
+    # model names or local model directories are provided. In offline mode we
+    # already pin every OCR model path, so omit lang to keep startup clean.
+    if not has_explicit_model:
+        kwargs["lang"] = ocr_config.get("lang", "ch")
     return kwargs
 
 

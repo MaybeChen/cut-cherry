@@ -20,6 +20,9 @@ models:
     lang: ch
     version: PP-OCRv6
     allow_auto_download: false
+    det_model_name: PP-OCRv6_medium_det
+    rec_model_name: PP-OCRv6_medium_rec
+    cls_model_name: PP-LCNet_x0_25_textline_ori
     det_model_dir: models/ocr/ppocrv6_medium_det
     rec_model_dir: models/ocr/ppocrv6_medium_rec
     cls_model_dir: models/ocr/pp_lcnet_x0_25_textline_ori

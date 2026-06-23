@@ -10,6 +10,9 @@ def test_paddleocr_v3_kwargs_do_not_use_legacy_use_gpu():
     kwargs = _build_v3_kwargs(
         {
             "lang": "ch",
+            "det_model_name": "PP-OCRv6_medium_det",
+            "rec_model_name": "PP-OCRv6_medium_rec",
+            "cls_model_name": "PP-LCNet_x0_25_textline_ori",
             "det_model_dir": "models/ocr/ppocrv6_medium_det",
             "rec_model_dir": "models/ocr/ppocrv6_medium_rec",
             "cls_model_dir": "models/ocr/pp_lcnet_x0_25_textline_ori",
@@ -18,7 +21,10 @@ def test_paddleocr_v3_kwargs_do_not_use_legacy_use_gpu():
     )
     assert kwargs["device"] == "cpu"
     assert "use_gpu" not in kwargs
+    assert "lang" not in kwargs
+    assert kwargs["text_detection_model_name"] == "PP-OCRv6_medium_det"
     assert kwargs["text_detection_model_dir"] == "models/ocr/ppocrv6_medium_det"
+    assert kwargs["textline_orientation_model_name"] == "PP-LCNet_x0_25_textline_ori"
 
 
 def test_paddleocr_v2_kwargs_keep_legacy_use_gpu_for_old_versions():
