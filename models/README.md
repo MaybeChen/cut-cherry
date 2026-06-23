@@ -7,10 +7,10 @@ Recommended OCR layout for CPU development:
 ```text
 models/
   ocr/
-    ppocrv5_server_det/
+    ppocrv6_medium_det/
       inference.pdmodel
       inference.pdiparams
-    ppocrv5_server_rec/
+    ppocrv6_medium_rec/
       inference.pdmodel
       inference.pdiparams
     ch_ppocr_mobile_v2.0_cls/

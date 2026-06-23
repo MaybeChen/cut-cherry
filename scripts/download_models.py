@@ -6,8 +6,8 @@ MODEL_ROOT = Path("models")
 OCR_ROOT = MODEL_ROOT / "ocr"
 
 RECOMMENDED_OCR_MODELS = {
-    "det": "PP-OCRv5_server_det",
-    "rec": "PP-OCRv5_server_rec",
+    "det": "PP-OCRv6_medium_det",
+    "rec": "PP-OCRv6_medium_rec",
     "cls": "ch_ppocr_mobile_v2.0_cls",
 }
 
@@ -20,7 +20,7 @@ def main() -> None:
     place them under ./models.
     """
     OCR_ROOT.mkdir(parents=True, exist_ok=True)
-    for dirname in ("ppocrv5_server_det", "ppocrv5_server_rec", "ch_ppocr_mobile_v2.0_cls"):
+    for dirname in ("ppocrv6_medium_det", "ppocrv6_medium_rec", "ch_ppocr_mobile_v2.0_cls"):
         (OCR_ROOT / dirname).mkdir(parents=True, exist_ok=True)
 
     print("Manual model download only; no weights were downloaded.")
@@ -28,8 +28,8 @@ def main() -> None:
     for role, model_name in RECOMMENDED_OCR_MODELS.items():
         print(f"  {role}: {model_name}")
     print("Place Paddle inference files under:")
-    print("  models/ocr/ppocrv5_server_det/")
-    print("  models/ocr/ppocrv5_server_rec/")
+    print("  models/ocr/ppocrv6_medium_det/")
+    print("  models/ocr/ppocrv6_medium_rec/")
     print("  models/ocr/ch_ppocr_mobile_v2.0_cls/")
     print("Each inference folder should contain files such as inference.pdmodel and inference.pdiparams.")
 
