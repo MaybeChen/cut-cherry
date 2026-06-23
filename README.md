@@ -60,6 +60,43 @@ poetry install --with ocr,segmentation
 poetry run image2pptx convert input/input.png --device cuda
 ```
 
+
+## 本地模型目录与 OCR 版本建议
+
+本项目约定在仓库根目录使用 `models/` 存放手动下载的模型权重，目录本身会提交，占位和说明文件会保留；真实权重文件已被 `.gitignore` 忽略。
+
+CPU 首轮建议使用 PaddleOCR 的 PP-OCRv5 server 系列，优先保证 PPT 截图、中文、英文、数字和常见 UI 文本的识别质量：
+
+```text
+models/
+  ocr/
+    ppocrv5_server_det/
+      inference.pdmodel
+      inference.pdiparams
+    ppocrv5_server_rec/
+      inference.pdmodel
+      inference.pdiparams
+    ch_ppocr_mobile_v2.0_cls/
+      inference.pdmodel
+      inference.pdiparams
+```
+
+推荐模型：
+
+- 检测：`PP-OCRv5_server_det`
+- 识别：`PP-OCRv5_server_rec`
+- 方向分类：`ch_ppocr_mobile_v2.0_cls`
+
+默认配置已指向上述本地路径，并设置 `models.ocr.allow_auto_download=false`，因此缺少模型时会明确降级为空 OCR 结果，不会在代码导入或转换时偷偷下载。
+
+初始化目录：
+
+```bash
+poetry run python scripts/download_models.py
+```
+
+该脚本只创建目录并打印下载计划，不会联网下载权重。
+
 ## 配置
 
 默认配置在 `config/default.yaml`。运行时覆盖示例：

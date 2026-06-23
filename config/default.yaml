@@ -18,6 +18,11 @@ models:
   ocr:
     engine: paddleocr
     lang: ch
+    version: PP-OCRv5
+    allow_auto_download: false
+    det_model_dir: models/ocr/ppocrv5_server_det
+    rec_model_dir: models/ocr/ppocrv5_server_rec
+    cls_model_dir: models/ocr/ch_ppocr_mobile_v2.0_cls
   layout:
     engine: paddleocr_vl
   sam3:
