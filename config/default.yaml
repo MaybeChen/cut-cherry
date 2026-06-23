@@ -22,7 +22,7 @@ models:
     allow_auto_download: false
     det_model_dir: models/ocr/ppocrv6_medium_det
     rec_model_dir: models/ocr/ppocrv6_medium_rec
-    cls_model_dir: models/ocr/ch_ppocr_mobile_v2.0_cls
+    cls_model_dir: models/ocr/pp_lcnet_x0_25_textline_ori
   layout:
     engine: paddleocr_vl
   sam3:

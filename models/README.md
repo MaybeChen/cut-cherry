@@ -15,9 +15,10 @@ models/
       inference.json
       inference.pdiparams
       inference.yml
-    ch_ppocr_mobile_v2.0_cls/
-      inference.pdmodel  # legacy classifier may still use old format
+    pp_lcnet_x0_25_textline_ori/
+      inference.json
       inference.pdiparams
+      inference.yml
 ```
 
 

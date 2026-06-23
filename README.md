@@ -78,16 +78,17 @@ models/
       inference.json
       inference.pdiparams
       inference.yml
-    ch_ppocr_mobile_v2.0_cls/
-      inference.pdmodel  # legacy classifier may still use old format
+    pp_lcnet_x0_25_textline_ori/
+      inference.json
       inference.pdiparams
+      inference.yml
 ```
 
 推荐模型：
 
 - 检测：`PP-OCRv6_medium_det`
 - 识别：`PP-OCRv6_medium_rec`
-- 方向分类：`ch_ppocr_mobile_v2.0_cls`
+- 方向分类：`PP-LCNet_x0_25_textline_ori`
 
 
 > 注意：PP-OCRv6 / PaddlePaddle 3.x 的 Hugging Face 推理模型通常使用新格式：`inference.json` + `inference.pdiparams` + `inference.yml`，不一定再提供旧版 `inference.pdmodel`。本项目的 OCR 本地目录接受该新格式。
