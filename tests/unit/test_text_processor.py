@@ -62,3 +62,21 @@ def test_normalize_paddleocr_v3_predict_result_dict():
     blocks = _normalize_ocr_result(result)
     assert blocks[0]["text"] == "Hello OCR"
     assert blocks[0]["bbox"] == [1.0, 2.0, 11.0, 7.0]
+
+
+def test_write_ocr_report_records_status_and_items(tmp_path):
+    from types import SimpleNamespace
+
+    from image2pptx.processors.text_processor import _write_ocr_report
+
+    ctx = SimpleNamespace(
+        job_id="job123",
+        job_dir=tmp_path,
+        artifacts={},
+        candidates={"text": [{"text": "识别成功", "confidence": 0.99, "bbox": [1, 2, 3, 4]}]},
+    )
+    _write_ocr_report(ctx, status="succeeded", warnings=[])
+    report_path = tmp_path / "ocr_results.json"
+    assert report_path.exists()
+    assert ctx.artifacts["ocr_results"] == report_path
+    assert "识别成功" in report_path.read_text(encoding="utf-8")

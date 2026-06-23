@@ -180,6 +180,7 @@ outputs/{job_id}/lab.png
 outputs/{job_id}/hsv.png
 outputs/{job_id}/preview.png
 outputs/{job_id}/slide_ir.json
+outputs/{job_id}/ocr_results.json
 outputs/{job_id}/result.pptx
 ```
 
@@ -188,5 +189,7 @@ outputs/{job_id}/result.pptx
 PaddleOCR 3.x 的 Python API 已不再接受旧版 `use_gpu` 参数，设备选择使用 `device="cpu"` 或 `device="gpu"`；PaddleOCR 2.x 仍使用 `use_gpu=True/False`。本工程的 `TextProcessor` 会优先按 3.x API 初始化 `PaddleOCR`，如果当前环境安装的是 2.x 且出现 `Unknown argument`，会自动回退到 2.x 参数形态，不再因为 `ValueError: Unknown argument: use_gpu` 中断转换。
 
 PP-OCRv6 推荐搭配 PaddleOCR 3.x 使用；如需使用 PaddleOCR 2.x，请改用兼容 2.x 的 PP-OCR 模型目录或确认本地模型格式可被旧版加载。
+
+CLI 转换完成后会打印 OCR 状态、识别条数、`ocr_results.json` 路径，并在识别成功时输出前 100 条识别文本、置信度和 bbox。
 
 PaddleOCR 3.x 离线本地模型建议同时配置模型名与模型目录，例如 `det_model_name: PP-OCRv6_medium_det` 搭配 `det_model_dir: models/ocr/ppocrv6_medium_det`。当显式配置本地模型名或目录时，本工程不会向 PaddleOCR 3.x 继续传入 `lang`，以避免启动时出现 `lang and ocr_version will be ignored` 警告；方向分类模型名也固定为 `PP-LCNet_x0_25_textline_ori`，避免默认创建 `PP-LCNet_x1_0_textline_ori`。

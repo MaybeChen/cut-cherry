@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import json
+import os
+import warnings
 from pathlib import Path
 from typing import Any, Callable
 
@@ -23,6 +26,7 @@ class TextProcessor:
         if importlib.util.find_spec("paddleocr") is None:
             ctx.candidates["text"] = blocks
             ctx.candidates["text_warnings"] = [{"reason": "paddleocr_not_installed"}]
+            _write_ocr_report(ctx, status="skipped", warnings=ctx.candidates["text_warnings"])
             return
 
         missing_dirs = _missing_model_dirs(_configured_model_dirs(ocr_config))
@@ -31,14 +35,19 @@ class TextProcessor:
             ctx.candidates["text_warnings"] = [
                 {"reason": "local_ocr_model_missing", "missing_dirs": missing_dirs}
             ]
+            _write_ocr_report(ctx, status="skipped", warnings=ctx.candidates["text_warnings"])
             return
 
-        paddleocr_module = importlib.import_module("paddleocr")
+        _prepare_paddle_runtime_logs()
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message=".*No ccache found.*")
+            paddleocr_module = importlib.import_module("paddleocr")
         paddleocr_cls = getattr(paddleocr_module, "PaddleOCR")
         ocr, api_version, warnings = _create_paddleocr(paddleocr_cls, ocr_config, ctx.device)
         if ocr is None:
             ctx.candidates["text"] = blocks
             ctx.candidates["text_warnings"] = warnings
+            _write_ocr_report(ctx, status="failed", warnings=warnings)
             return
 
         try:
@@ -54,11 +63,39 @@ class TextProcessor:
             ctx.candidates["text_warnings"] = [
                 {"reason": "ocr_inference_failed", "message": str(exc)}
             ]
+            _write_ocr_report(ctx, status="failed", warnings=ctx.candidates["text_warnings"])
             return
 
         ctx.candidates["text"] = _normalize_ocr_result(result)
         if warnings:
             ctx.candidates["text_warnings"] = warnings
+        _write_ocr_report(
+            ctx,
+            status="succeeded" if ctx.candidates["text"] else "empty",
+            warnings=warnings,
+        )
+
+
+def _prepare_paddle_runtime_logs() -> None:
+    # Paddle/PaddleOCR can emit noisy native logs before Python logging is ready.
+    # These environment flags must be set before importing paddleocr.
+    os.environ.setdefault("GLOG_minloglevel", "2")
+    os.environ.setdefault("FLAGS_minloglevel", "2")
+
+
+def _write_ocr_report(
+    ctx: PipelineContext, status: str, warnings: list[dict[str, Any]] | None = None
+) -> None:
+    report_path = ctx.job_dir / "ocr_results.json"
+    report = {
+        "job_id": ctx.job_id,
+        "status": status,
+        "count": len(ctx.candidates.get("text", [])),
+        "warnings": warnings or [],
+        "items": ctx.candidates.get("text", []),
+    }
+    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    ctx.artifacts["ocr_results"] = report_path
 
 
 def _create_paddleocr(
