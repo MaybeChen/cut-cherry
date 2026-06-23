@@ -140,3 +140,14 @@ def test_validate_local_model_names_reports_det_rec_folder_mixup(tmp_path):
     assert warnings[0]["reason"] == "local_ocr_model_mismatch"
     assert warnings[0]["expected_model_name"] == "PP-OCRv6_medium_det"
     assert warnings[0]["found_model_name"] == "PP-OCRv6_medium_rec"
+
+
+def test_build_inference_error_warning_detects_onednn_pir_error():
+    from image2pptx.processors.text_processor import _build_inference_error_warning
+
+    warning = _build_inference_error_warning(
+        RuntimeError("ConvertPirAttribute2RuntimeAttribute not support onednn")
+    )
+
+    assert warning["reason"] == "ocr_inference_failed_onednn"
+    assert "FLAGS_use_mkldnn=0" in warning["remediation"]

@@ -67,9 +67,7 @@ class TextProcessor:
                 )
         except (RuntimeError, ValueError, TypeError, OSError) as exc:
             ctx.candidates["text"] = blocks
-            ctx.candidates["text_warnings"] = [
-                {"reason": "ocr_inference_failed", "message": str(exc)}
-            ]
+            ctx.candidates["text_warnings"] = [_build_inference_error_warning(exc)]
             _write_ocr_report(ctx, status="failed", warnings=ctx.candidates["text_warnings"])
             return
 
@@ -149,6 +147,29 @@ def _prepare_paddle_runtime_logs() -> None:
     # These environment flags must be set before importing paddleocr.
     os.environ.setdefault("GLOG_minloglevel", "2")
     os.environ.setdefault("FLAGS_minloglevel", "2")
+    # Some PaddlePaddle 3.x CPU wheels can fail in oneDNN/PIR conversion for
+    # PP-OCRv6 on Windows. Disable oneDNN/MKLDNN by default for correctness;
+    # users can override these env vars before launching the CLI if needed.
+    os.environ.setdefault("FLAGS_use_mkldnn", "0")
+    os.environ.setdefault("FLAGS_enable_mkldnn", "false")
+    os.environ.setdefault("DNNL_VERBOSE", "0")
+
+
+def _build_inference_error_warning(exc: BaseException) -> dict[str, Any]:
+    message = str(exc)
+    if "ConvertPirAttribute2RuntimeAttribute" in message or "onednn" in message.lower():
+        return {
+            "reason": "ocr_inference_failed_onednn",
+            "message": message,
+            "remediation": (
+                "PaddlePaddle CPU oneDNN/PIR path failed. This service now sets "
+                "FLAGS_use_mkldnn=0 and FLAGS_enable_mkldnn=false before importing "
+                "paddleocr; restart the CLI process and run the conversion again. If the "
+                "error persists, reinstall a PaddlePaddle CPU wheel compatible with your "
+                "Python/Windows version."
+            ),
+        }
+    return {"reason": "ocr_inference_failed", "message": message}
 
 
 def _write_ocr_report(
