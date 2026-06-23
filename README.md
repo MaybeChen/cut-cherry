@@ -182,3 +182,9 @@ outputs/{job_id}/preview.png
 outputs/{job_id}/slide_ir.json
 outputs/{job_id}/result.pptx
 ```
+
+## PaddleOCR 版本兼容说明
+
+PaddleOCR 3.x 的 Python API 已不再接受旧版 `use_gpu` 参数，设备选择使用 `device="cpu"` 或 `device="gpu"`；PaddleOCR 2.x 仍使用 `use_gpu=True/False`。本工程的 `TextProcessor` 会优先按 3.x API 初始化 `PaddleOCR`，如果当前环境安装的是 2.x 且出现 `Unknown argument`，会自动回退到 2.x 参数形态，不再因为 `ValueError: Unknown argument: use_gpu` 中断转换。
+
+PP-OCRv6 推荐搭配 PaddleOCR 3.x 使用；如需使用 PaddleOCR 2.x，请改用兼容 2.x 的 PP-OCR 模型目录或确认本地模型格式可被旧版加载。
