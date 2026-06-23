@@ -24,18 +24,20 @@ outputs/                运行产物目录
 
 ## 安装与运行
 
+> 建议在仓库根目录创建 `input/` 目录存放本地待转换文件，例如 `input/input.png`。该目录已加入 `.gitignore`，不会误提交真实业务图片。
+
 ### Linux / macOS / Windows CPU
 
 ```bash
 poetry install
-poetry run image2pptx convert input.png --device cpu
+poetry run image2pptx convert input/input.png --device cpu
 ```
 
 ### Windows CPU + OCR
 
 ```powershell
 poetry install --with ocr
-poetry run image2pptx convert input.png --device cpu
+poetry run image2pptx convert input/input.png --device cpu
 ```
 
 ### Linux CUDA
@@ -46,7 +48,7 @@ GPU wheel 与 CUDA 版本强相关；建议先按 Paddle/PyTorch 官方说明安
 poetry install --with ocr,segmentation
 # 如环境可解析 GPU wheel：
 poetry install --with gpu
-poetry run image2pptx convert input.png --device cuda
+poetry run image2pptx convert input/input.png --device cuda
 ```
 
 ### Windows CUDA
@@ -55,7 +57,7 @@ poetry run image2pptx convert input.png --device cuda
 
 ```powershell
 poetry install --with ocr,segmentation
-poetry run image2pptx convert input.png --device cuda
+poetry run image2pptx convert input/input.png --device cuda
 ```
 
 ## 配置
@@ -63,9 +65,9 @@ poetry run image2pptx convert input.png --device cuda
 默认配置在 `config/default.yaml`。运行时覆盖示例：
 
 ```bash
-poetry run image2pptx convert input.png --device cpu
-poetry run image2pptx convert input.png --device cuda
-poetry run image2pptx convert input.png --config config/cpu.yaml
+poetry run image2pptx convert input/input.png --device cpu
+poetry run image2pptx convert input/input.png --device cuda
+poetry run image2pptx convert input/input.png --config config/cpu.yaml
 ```
 
 `auto` 会按需检测 CUDA；`cpu` 强制 CPU；`cuda` 在 CUDA 不可用时给出明确错误。所有重模型均不得在 import 阶段下载或加载。
@@ -81,9 +83,9 @@ poetry run python scripts/download_models.py
 ## CLI 示例
 
 ```bash
-poetry run image2pptx convert input.png
-poetry run image2pptx convert input.png --device cpu --no-sam3 --no-vlm --no-refine
-poetry run image2pptx inspect input.png
+poetry run image2pptx convert input/input.png
+poetry run image2pptx convert input/input.png --device cpu --no-sam3 --no-vlm --no-refine
+poetry run image2pptx inspect input/input.png
 poetry run image2pptx evaluate source.png preview.png
 ```
 
