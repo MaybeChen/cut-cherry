@@ -1,0 +1,94 @@
+from pathlib import Path
+from types import SimpleNamespace
+
+from image2pptx.models import layout as layout_model
+from image2pptx.models.layout import LayoutModelAdapter, normalize_layout_result
+from image2pptx.processors.layout_parser import LayoutParserProcessor
+
+
+def test_normalize_layout_result_maps_common_regions():
+    regions = normalize_layout_result(
+        {
+            "res": {
+                "layout_det_res": [
+                    {"label": "table", "bbox": [1, 2, 11, 12], "score": 0.9},
+                    {"type": "figure", "coordinate": [[20, 20], [40, 20], [40, 30], [20, 30]]},
+                ]
+            }
+        }
+    )
+
+    assert regions[0]["kind"] == "table_candidate"
+    assert regions[0]["bbox"] == [1.0, 2.0, 11.0, 12.0]
+    assert regions[1]["kind"] == "image_candidate"
+    assert regions[1]["bbox"] == [20.0, 20.0, 40.0, 30.0]
+
+
+def test_layout_adapter_reports_missing_local_model(monkeypatch):
+    monkeypatch.setattr(layout_model.importlib.util, "find_spec", lambda name: object())
+    adapter = LayoutModelAdapter({"engine": "pp_structure_v3", "allow_auto_download": False}, "cpu")
+
+    available, warnings = adapter.available()
+
+    assert available is False
+    assert warnings[0]["reason"] == "local_layout_model_missing"
+
+
+def test_layout_adapter_uses_ppstructurev3_predict(monkeypatch, tmp_path):
+    class FakePPStructureV3:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def predict(self, input, **kwargs):
+            return [{"label": "title", "bbox": [10, 10, 80, 30], "score": 0.88, "text": "Title"}]
+
+    fake_module = SimpleNamespace(PPStructureV3=FakePPStructureV3)
+    monkeypatch.setattr(layout_model.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(layout_model.importlib, "import_module", lambda name: fake_module)
+    image = tmp_path / "page.png"
+    image.write_bytes(b"fake")
+
+    adapter = LayoutModelAdapter({"engine": "pp_structure_v3", "allow_auto_download": True}, "cpu")
+    regions, warnings = adapter.infer(image)
+
+    assert warnings == []
+    assert regions[0]["kind"] == "title"
+    assert regions[0]["text"] == "Title"
+
+
+def test_layout_parser_writes_model_report_and_merges_fallback(tmp_path, monkeypatch):
+    normalized = tmp_path / "normalized.png"
+    normalized.write_bytes(b"fake")
+
+    def fake_infer(self, image_path: Path):
+        return [
+            {
+                "id": "layout_model_0",
+                "kind": "title",
+                "bbox": [10, 10, 100, 40],
+                "confidence": 0.9,
+                "text": "Model title",
+            }
+        ], []
+
+    monkeypatch.setattr(LayoutModelAdapter, "infer", fake_infer)
+    ctx = SimpleNamespace(
+        job_id="job123",
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        device="cpu",
+        settings=SimpleNamespace(models=SimpleNamespace(layout={"engine": "pp_structure_v3"})),
+        candidates={
+            "text": [
+                {"id": "text_0", "text": "Body", "bbox": [10, 80, 80, 100], "confidence": 0.8}
+            ],
+            "lines": [],
+            "shapes": [],
+        },
+    )
+
+    LayoutParserProcessor().run(ctx)
+
+    assert ctx.candidates["layout_regions"][0]["text"] == "Model title"
+    assert (tmp_path / "layout_results.json").exists()
+    assert ctx.artifacts["layout_results"] == tmp_path / "layout_results.json"
