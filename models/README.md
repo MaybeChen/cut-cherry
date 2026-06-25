@@ -52,6 +52,13 @@ huggingface-cli download PaddlePaddle/PaddleOCR-VL-1.6 --local-dir models/layout
 
 For this service, keep all application-side model settings in `config/default.yaml`. Prefer a local PaddleX pipeline YAML and point `models.layout.paddlex_config` to it from `config/default.yaml`. The YAML should reference `models/layout/paddleocr_vl` so PaddleX does not fetch the VLM at runtime. Keep `models.layout.allow_auto_download=false` in production/offline environments.
 
+Install PaddleX OCR extras before generating the PP-StructureV3 config:
+
+```bash
+poetry install --with ocr
+# or: poetry run pip install "paddlex[ocr]"
+```
+
 Generate the PP-StructureV3 PaddleX config with:
 
 ```bash

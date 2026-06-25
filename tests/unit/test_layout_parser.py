@@ -71,3 +71,14 @@ def test_layout_parser_does_not_turn_simple_frame_into_table():
     assert not any(
         region["kind"] == "table_candidate" for region in ctx.candidates["layout_regions"]
     )
+
+
+def test_layout_model_dependency_error_warning_mentions_paddlex_extra():
+    from image2pptx.processors.layout_parser import _build_layout_model_error_warning
+
+    warning = _build_layout_model_error_warning(
+        RuntimeError("PP-StructureV3 requires additional dependencies")
+    )
+
+    assert warning["reason"] == "layout_model_missing_paddlex_extra"
+    assert "paddlex[ocr]" in warning["remediation"]

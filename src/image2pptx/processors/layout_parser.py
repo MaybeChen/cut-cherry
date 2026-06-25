@@ -36,7 +36,22 @@ def _run_layout_model(ctx: PipelineContext) -> tuple[list[dict], list[dict]]:
     try:
         return adapter.infer(ctx.artifacts["normalized"])
     except (RuntimeError, ValueError, TypeError, OSError) as exc:
-        return [], [{"reason": "layout_model_inference_failed", "message": str(exc)}]
+        return [], [_build_layout_model_error_warning(exc)]
+
+
+def _build_layout_model_error_warning(exc: BaseException) -> dict[str, str]:
+    message = str(exc)
+    if "requires additional dependencies" in message or "DependencyError" in message:
+        return {
+            "reason": "layout_model_missing_paddlex_extra",
+            "message": message,
+            "remediation": (
+                "PP-StructureV3 requires PaddleX OCR extras. Run "
+                "`poetry install --with ocr` after updating dependencies, or "
+                '`poetry run pip install "paddlex[ocr]"`.'
+            ),
+        }
+    return {"reason": "layout_model_inference_failed", "message": message}
 
 
 def _build_rule_layout_regions(ctx: PipelineContext, text_blocks: list[dict]) -> list[dict]:

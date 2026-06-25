@@ -53,6 +53,9 @@ def main() -> None:
     print("  models/layout/pp_structure_v3/")
     print("  models/layout/pp_structure_v3/PP-StructureV3.yaml")
     print("  models/layout/paddleocr_vl/")
+    print("PP-StructureV3 requires PaddleX OCR extras:")
+    print("  poetry install --with ocr")
+    print('  # or: poetry run pip install "paddlex[ocr]"')
     print("Example command to export a PP-StructureV3 PaddleX config:")
     print(
         '  python -c "from paddleocr import PPStructureV3; '

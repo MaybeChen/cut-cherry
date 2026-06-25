@@ -33,10 +33,12 @@ poetry install
 poetry run image2pptx convert input/input.png --device cpu
 ```
 
-### Windows CPU + OCR
+### Windows CPU + OCR / PP-StructureV3
 
 ```powershell
 poetry install --with ocr
+# 如果你已经有旧环境且仍报 paddlex extra 缺失，可补装：
+poetry run pip install "paddlex[ocr]"
 poetry run image2pptx convert input/input.png --device cpu
 ```
 
@@ -185,6 +187,15 @@ outputs/{job_id}/result.pptx
 ```
 
 ## PaddleOCR-VL / PP-StructureV3 接入
+
+PP-StructureV3 依赖 PaddleX 的 OCR extras。如果导出或启动时报 `PP-StructureV3 requires additional dependencies`，请先运行：
+
+```bash
+poetry install --with ocr
+# 或在已有虚拟环境中补装
+poetry run pip install "paddlex[ocr]"
+```
+
 
 Layout 阶段现在会优先尝试 `models.layout.engine` 指定的结构化模型，并在模型不可用、缺少本地配置或推理失败时自动回退到规则版 OCR + OpenCV layout。默认配置使用 `pp_structure_v3`，且 `allow_auto_download=false`，因此不会偷偷下载模型。
 
