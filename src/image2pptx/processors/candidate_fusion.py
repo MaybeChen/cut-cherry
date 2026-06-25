@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 
 from PIL import Image
@@ -53,9 +54,28 @@ class CandidateFusionProcessor:
                 )
             )
         asset_root = ctx.job_dir / "assets"
+        asset_root.mkdir(parents=True, exist_ok=True)
+        asset_manifest = _start_asset_manifest(ctx, asset_root, image_regions)
+        _print_asset_event(
+            "start",
+            f"image/logo candidates={len(image_regions)} output={asset_root}",
+        )
+        if not image_regions:
+            _print_asset_event("skip", "no image_candidate/logo_candidate regions found")
         for image_region in image_regions:
+            _print_asset_event(
+                "candidate",
+                f"id={image_region.get('id')} kind={image_region.get('kind')} bbox={image_region.get('bbox')}",
+            )
             asset = _prepare_image_asset(im, image_region, asset_root)
             if not asset:
+                _record_asset_manifest_item(
+                    asset_manifest, image_region, status="skipped_invalid_bbox"
+                )
+                _print_asset_event(
+                    "skip",
+                    f"id={image_region.get('id')} reason=invalid_or_empty_bbox",
+                )
                 continue
             x1, y1, x2, y2 = asset["bbox"]
             element_type = ElementType.LOGO if asset["kind"] == "logo" else ElementType.IMAGE
@@ -65,6 +85,17 @@ class CandidateFusionProcessor:
                 "kind": asset["kind"],
                 "bbox": asset["bbox"],
             }
+            _record_asset_manifest_item(
+                asset_manifest,
+                image_region,
+                status="saved",
+                asset=asset,
+                element_type=str(element_type),
+            )
+            _print_asset_event(
+                "saved",
+                f"id={image_region.get('id')} type={element_type} path={asset['path']} bbox={asset['bbox']}",
+            )
             slide.elements.append(
                 SlideElement(
                     id=image_region["id"],
@@ -81,6 +112,7 @@ class CandidateFusionProcessor:
                     asset_path=asset["path"],
                 )
             )
+        _write_asset_manifest(ctx, asset_root, asset_manifest)
         for formula in formula_regions:
             x1, y1, x2, y2 = formula["bbox"]
             slide.elements.append(
@@ -196,6 +228,52 @@ def _overlap_ratio(a: list[float], b: list[float]) -> float:
     inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
     area = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1])
     return inter / area if area else 0.0
+
+
+def _start_asset_manifest(ctx: PipelineContext, asset_root, image_regions: list[dict]) -> dict:
+    return {
+        "job_id": getattr(ctx, "job_id", None),
+        "asset_root": str(asset_root),
+        "candidate_count": len(image_regions),
+        "items": [],
+    }
+
+
+def _record_asset_manifest_item(
+    manifest: dict,
+    region: dict,
+    status: str,
+    asset: dict | None = None,
+    element_type: str | None = None,
+) -> None:
+    item = {
+        "id": region.get("id"),
+        "source_kind": region.get("kind"),
+        "status": status,
+        "source_bbox": region.get("bbox"),
+    }
+    if asset:
+        item.update(
+            {
+                "asset_kind": asset["kind"],
+                "asset_path": str(asset["path"]),
+                "bounded_bbox": asset["bbox"],
+                "element_type": element_type,
+            }
+        )
+    manifest["items"].append(item)
+
+
+def _write_asset_manifest(ctx: PipelineContext, asset_root, manifest: dict) -> None:
+    manifest_path = asset_root / "image_assets.json"
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    if hasattr(ctx, "artifacts") and isinstance(ctx.artifacts, dict):
+        ctx.artifacts["image_assets"] = manifest_path
+    _print_asset_event("manifest", f"path={manifest_path} items={len(manifest['items'])}")
+
+
+def _print_asset_event(stage: str, message: str) -> None:
+    print(f"[image2pptx][assets][{stage}] {message}")
 
 
 def _prepare_image_asset(im: Image.Image, region: dict, asset_root) -> dict | None:

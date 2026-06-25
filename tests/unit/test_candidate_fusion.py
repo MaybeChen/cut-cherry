@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 from PIL import Image
@@ -85,7 +86,7 @@ def test_candidate_fusion_promotes_layout_regions_to_table_and_image(tmp_path):
     assert (tmp_path / "assets" / "images" / "image_candidate_0.png").exists()
 
 
-def test_candidate_fusion_exports_logo_assets_separately(tmp_path):
+def test_candidate_fusion_exports_logo_assets_separately(tmp_path, capsys):
     normalized = tmp_path / "normalized.png"
     Image.new("RGB", (400, 300), "white").save(normalized)
     ctx = SimpleNamespace(
@@ -118,3 +119,37 @@ def test_candidate_fusion_exports_logo_assets_separately(tmp_path):
     assert logo.bbox.x == 0
     assert logo.bbox.width == 90
     assert logo.provenance.raw["asset"]["kind"] == "logo"
+    output = capsys.readouterr().out
+    assert "[image2pptx][assets][saved]" in output
+    manifest = json.loads((tmp_path / "assets" / "image_assets.json").read_text())
+    assert manifest["candidate_count"] == 1
+    assert manifest["items"][0]["asset_path"].endswith("assets/logos/brand_logo.png")
+
+
+def test_candidate_fusion_writes_asset_manifest_when_no_image_regions(tmp_path, capsys):
+    normalized = tmp_path / "normalized.png"
+    Image.new("RGB", (300, 200), "white").save(normalized)
+    ctx = SimpleNamespace(
+        job_id="job_no_assets",
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        candidates={
+            "layout_regions": [],
+            "text_blocks": [],
+            "shapes": [],
+            "formulas": [],
+            "charts": [],
+            "connectors": [],
+        },
+    )
+
+    CandidateFusionProcessor().run(ctx)
+
+    output = capsys.readouterr().out
+    manifest_path = tmp_path / "assets" / "image_assets.json"
+    manifest = json.loads(manifest_path.read_text())
+    assert "no image_candidate/logo_candidate regions found" in output
+    assert manifest["job_id"] == "job_no_assets"
+    assert manifest["candidate_count"] == 0
+    assert manifest["items"] == []
+    assert ctx.artifacts["image_assets"] == manifest_path
