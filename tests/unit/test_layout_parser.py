@@ -120,3 +120,38 @@ def test_visual_suppression_ignores_weak_single_character_ocr() -> None:
     filtered = _text_blocks_for_visual_suppression(blocks)
 
     assert [block["id"] for block in filtered] == ["real"]
+
+
+def test_rule_layout_includes_sam3_visual_regions_before_text() -> None:
+    from types import SimpleNamespace
+
+    from image2pptx.processors.layout_parser import _build_rule_layout_regions
+
+    ctx = SimpleNamespace(
+        artifacts={},
+        candidates={
+            "sam3_regions": [
+                {
+                    "id": "sam3_icon_0",
+                    "kind": "icon_candidate",
+                    "bbox": [10, 10, 30, 30],
+                    "confidence": 0.8,
+                }
+            ],
+            "shapes": [],
+            "lines": [],
+        },
+    )
+    text_blocks = [
+        {
+            "id": "text_line_0",
+            "kind": "text_line",
+            "text": "Label",
+            "bbox": [40, 10, 100, 30],
+            "confidence": 0.9,
+        }
+    ]
+
+    regions = _build_rule_layout_regions(ctx, text_blocks)
+
+    assert [region["id"] for region in regions] == ["sam3_icon_0", "text_line_0"]

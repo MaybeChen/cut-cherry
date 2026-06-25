@@ -60,8 +60,11 @@ def _build_layout_model_error_warning(exc: BaseException) -> dict[str, str]:
 def _build_rule_layout_regions(ctx: PipelineContext, text_blocks: list[dict]) -> list[dict]:
     slide_size = _get_slide_size(ctx)
     visual_suppression_blocks = _text_blocks_for_visual_suppression(text_blocks)
-    image_regions = _detect_image_candidates(
-        ctx.candidates.get("shapes", []), visual_suppression_blocks, slide_size
+    image_regions = [dict(region) for region in ctx.candidates.get("sam3_regions", [])]
+    image_regions.extend(
+        _detect_image_candidates(
+            ctx.candidates.get("shapes", []), visual_suppression_blocks, slide_size
+        )
     )
     image_regions.extend(
         _detect_raster_icon_candidates(ctx, visual_suppression_blocks, slide_size, image_regions)
