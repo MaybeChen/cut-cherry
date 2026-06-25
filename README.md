@@ -213,10 +213,10 @@ bash scripts/setup_sam3.sh
 SAM3_CLONE_URL="https://gitclone.com/github.com/facebookresearch/sam3.git" bash scripts/setup_sam3.sh
 ```
 
-脚本会在安装 SAM3 前后执行 `pip install --upgrade "numpy>=2.1,<2.8"` 并运行 `pip check`，避免 SAM3 或其它依赖把 NumPy 降到 `1.26.x` 后触发 `opencv-python`、`scipy`、`tifffile` 的依赖冲突。如果你的运行环境有更严格的制品库约束，可以用 `NUMPY_SPEC` 覆盖：
+脚本会在安装 SAM3 前后执行兼容版本对齐：`numpy>=1.26,<2`、`opencv-python<4.13`、`scipy<1.18`、`tifffile<2026`，并运行 `pip check`。这组约束同时满足 `sam3 0.1.0` 的 `numpy<2,>=1.26` 与 `paddlex 3.7.1` 的 `numpy<2.4,>=1.24`，避免安装过程中被升级到 `numpy 2.5.0` 后产生依赖冲突。如果你的运行环境有更严格的制品库约束，可以用 `NUMPY_SPEC` 等变量覆盖：
 
 ```bash
-NUMPY_SPEC="numpy>=2.1,<2.8" bash scripts/setup_sam3.sh
+NUMPY_SPEC="numpy>=1.26,<2" OPENCV_SPEC="opencv-python<4.13" bash scripts/setup_sam3.sh
 ```
 
 当前默认配置按 CPU 运行（`models.sam3.device: cpu`）；CPU 可用于调试但速度较慢。如果后续切到 GPU，再把 `device` 或命令行 `--device` 改成 `cuda`。完成源码安装后，把 checkpoint 和 BPE 文件放到 `models/` 目录。示例目录：
@@ -237,10 +237,15 @@ models:
   sam3:
     enabled: true
     device: cpu
+    endpoint: null
+    send_device: false
+    timeout: 30
     sam3_src_path: sam3_src
+    source_path: null
     model_path: models/sam3/sam3.pt
     checkpoint_path: models/sam3/sam3.pt
     bpe_path: models/sam3/bpe_simple_vocab_16e6.txt.gz
+    load_from_hf: false
     prompts: [icon, logo, image, figure, diagram symbol]
     score_threshold: 0.5
     epsilon_factor: 0.02
@@ -352,6 +357,8 @@ poetry run pip install "paddlex[ocr]"
 
 
 Layout 阶段现在会优先尝试 `models.layout.engine` 指定的结构化模型，并在模型不可用、缺少本地配置或推理失败时自动回退到规则版 OCR + OpenCV layout。默认配置使用 `pp_structure_v3`，且 `allow_auto_download=false`，因此不会偷偷下载模型。
+
+如果你已经生成过 `models/layout/pp_structure_v3/PP-StructureV3.yaml` 并且里面的模型路径已经补成本地路径，则不需要再次导出或重新生成这个 config；保留当前 `config/default.yaml` 的 `models.layout.paddlex_config` 指向该文件即可。只有在 YAML 缺失、切换 PP-StructureV3/PaddleOCR-VL、升级 PaddleOCR/PaddleX pipeline，或本地模型目录结构变化时，才需要重新导出或重新运行 `scripts/patch_pp_structure_config.py`。
 
 所有应用侧 layout 配置都定义在 `config/default.yaml` 的 `models.layout` 下；不需要额外新建 `config/layout_paddleocr_vl_local.yaml`。需要切换 PP-StructureV3 或 PaddleOCR-VL 时，直接修改 `config/default.yaml` 中的 `models.layout.engine`、`paddlex_config`、`allow_auto_download` 等字段即可。
 
