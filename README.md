@@ -213,6 +213,12 @@ bash scripts/setup_sam3.sh
 SAM3_CLONE_URL="https://gitclone.com/github.com/facebookresearch/sam3.git" bash scripts/setup_sam3.sh
 ```
 
+脚本会在安装 SAM3 前后执行 `pip install --upgrade "numpy>=2.1,<2.8"` 并运行 `pip check`，避免 SAM3 或其它依赖把 NumPy 降到 `1.26.x` 后触发 `opencv-python`、`scipy`、`tifffile` 的依赖冲突。如果你的运行环境有更严格的制品库约束，可以用 `NUMPY_SPEC` 覆盖：
+
+```bash
+NUMPY_SPEC="numpy>=2.1,<2.8" bash scripts/setup_sam3.sh
+```
+
 当前默认配置按 CPU 运行（`models.sam3.device: cpu`）；CPU 可用于调试但速度较慢。如果后续切到 GPU，再把 `device` 或命令行 `--device` 改成 `cuda`。完成源码安装后，把 checkpoint 和 BPE 文件放到 `models/` 目录。示例目录：
 
 ```text
