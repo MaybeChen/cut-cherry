@@ -198,4 +198,4 @@ PaddleOCR 3.x 离线本地模型建议同时配置模型名与模型目录，例
 如果 CLI 输出 `local_ocr_model_mismatch`，例如 detection 目录期望 `PP-OCRv6_medium_det` 但发现 `PP-OCRv6_medium_rec`，说明模型文件放错目录：请重新检查 `models/ocr/ppocrv6_medium_det/`、`models/ocr/ppocrv6_medium_rec/`、`models/ocr/pp_lcnet_x0_25_textline_ori/` 里的 `inference.yml` / `inference.json` 是否来自对应模型仓库。检测模型、识别模型和方向分类模型不能互换目录。
 
 
-如果 OCR 推理失败并输出 `ocr_inference_failed_onednn` 或 `ConvertPirAttribute2RuntimeAttribute`，这是 PaddlePaddle 3.x CPU oneDNN/PIR 路径兼容问题。工程会在导入 PaddleOCR 前默认设置 `FLAGS_use_mkldnn=0`、`FLAGS_enable_mkldnn=false` 来禁用 oneDNN/MKLDNN；修改后请重新启动 CLI 进程再运行转换。如果仍失败，请更换与你的 Python / Windows 版本匹配的 PaddlePaddle CPU wheel。
+如果 OCR 推理失败并输出 `ocr_inference_failed_onednn` 或 `ConvertPirAttribute2RuntimeAttribute`，这是 PaddlePaddle 3.x CPU oneDNN/PIR 路径兼容问题。工程会在导入 PaddleOCR 前默认设置 `FLAGS_use_mkldnn=0`、`FLAGS_enable_mkldnn=false`、`PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT=0`，并在 PaddleOCR 3.x 初始化参数中设置 `enable_mkldnn=false` 来禁用 oneDNN/MKLDNN；修改后请重新启动 CLI 进程再运行转换。如果仍失败，请更换与你的 Python / Windows 版本匹配的 PaddlePaddle CPU wheel。

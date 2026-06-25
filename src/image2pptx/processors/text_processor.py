@@ -152,6 +152,7 @@ def _prepare_paddle_runtime_logs() -> None:
     # users can override these env vars before launching the CLI if needed.
     os.environ.setdefault("FLAGS_use_mkldnn", "0")
     os.environ.setdefault("FLAGS_enable_mkldnn", "false")
+    os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "0")
     os.environ.setdefault("DNNL_VERBOSE", "0")
 
 
@@ -163,7 +164,8 @@ def _build_inference_error_warning(exc: BaseException) -> dict[str, Any]:
             "message": message,
             "remediation": (
                 "PaddlePaddle CPU oneDNN/PIR path failed. This service now sets "
-                "FLAGS_use_mkldnn=0 and FLAGS_enable_mkldnn=false before importing "
+                "FLAGS_use_mkldnn=0, FLAGS_enable_mkldnn=false, and "
+                "PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT=0 before importing "
                 "paddleocr; restart the CLI process and run the conversion again. If the "
                 "error persists, reinstall a PaddlePaddle CPU wheel compatible with your "
                 "Python/Windows version."
@@ -213,6 +215,8 @@ def _build_v3_kwargs(ocr_config: dict[str, Any], device: str) -> dict[str, Any]:
         "use_doc_orientation_classify": False,
         "use_doc_unwarping": False,
         "use_textline_orientation": _use_textline_orientation(ocr_config),
+        "enable_mkldnn": bool(ocr_config.get("enable_mkldnn", False)),
+        "cpu_threads": int(ocr_config.get("cpu_threads", 1)),
     }
     path_map = {
         "det_model_dir": "text_detection_model_dir",

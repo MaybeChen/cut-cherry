@@ -20,6 +20,8 @@ def test_paddleocr_v3_kwargs_do_not_use_legacy_use_gpu():
         "cpu",
     )
     assert kwargs["device"] == "cpu"
+    assert kwargs["enable_mkldnn"] is False
+    assert kwargs["cpu_threads"] == 1
     assert "use_gpu" not in kwargs
     assert "lang" not in kwargs
     assert kwargs["text_detection_model_name"] == "PP-OCRv6_medium_det"
@@ -151,3 +153,25 @@ def test_build_inference_error_warning_detects_onednn_pir_error():
 
     assert warning["reason"] == "ocr_inference_failed_onednn"
     assert "FLAGS_use_mkldnn=0" in warning["remediation"]
+    assert "PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT=0" in warning["remediation"]
+
+
+def test_prepare_paddle_runtime_logs_disables_mkldnn(monkeypatch):
+    from image2pptx.processors.text_processor import _prepare_paddle_runtime_logs
+
+    for key in (
+        "FLAGS_use_mkldnn",
+        "FLAGS_enable_mkldnn",
+        "PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT",
+        "DNNL_VERBOSE",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    _prepare_paddle_runtime_logs()
+
+    import os
+
+    assert os.environ["FLAGS_use_mkldnn"] == "0"
+    assert os.environ["FLAGS_enable_mkldnn"] == "false"
+    assert os.environ["PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT"] == "0"
+    assert os.environ["DNNL_VERBOSE"] == "0"
