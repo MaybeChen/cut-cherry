@@ -222,3 +222,41 @@ def test_candidate_fusion_suppresses_ocr_text_inside_icon_region(tmp_path):
 
     assert "icon_0" in element_ids
     assert "text_misread_icon" not in element_ids
+
+
+def test_candidate_fusion_manifest_records_mask_metadata(tmp_path):
+    normalized = tmp_path / "normalized.png"
+    Image.new("RGB", (160, 120), "white").save(normalized)
+    ctx = SimpleNamespace(
+        job_id="job_mask_asset",
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        candidates={
+            "layout_regions": [
+                {
+                    "id": "sam3_logo",
+                    "kind": "logo_candidate",
+                    "bbox": [10, 10, 70, 50],
+                    "confidence": 0.88,
+                    "source": "sam3",
+                    "mask": {"format": "rle", "data": "5,5", "shape": [120, 160]},
+                    "polygon": [[10, 10], [70, 10], [70, 50], [10, 50]],
+                }
+            ],
+            "text_blocks": [],
+            "shapes": [],
+            "formulas": [],
+            "charts": [],
+            "connectors": [],
+        },
+    )
+
+    CandidateFusionProcessor().run(ctx)
+
+    manifest = json.loads((tmp_path / "assets" / "image_assets.json").read_text())
+    item = manifest["items"][0]
+    assert item["source"] == "sam3"
+    assert item["has_mask"] is True
+    assert item["has_polygon"] is True
+    assert item["mask_source"] == "sam3_mask"
+    assert item["crop_strategy"] == "mask_bbox"

@@ -255,8 +255,13 @@ def _record_asset_manifest_item(
     item = {
         "id": region.get("id"),
         "source_kind": region.get("kind"),
+        "source": region.get("source"),
+        "confidence": region.get("confidence"),
         "status": status,
         "source_bbox": region.get("bbox"),
+        "has_mask": bool(region.get("mask")),
+        "has_polygon": bool(region.get("polygon")),
+        "mask_source": _mask_source(region),
     }
     if asset:
         item.update(
@@ -265,6 +270,7 @@ def _record_asset_manifest_item(
                 "asset_path": str(asset["path"]),
                 "bounded_bbox": asset["bbox"],
                 "element_type": element_type,
+                "crop_strategy": asset.get("crop_strategy", "bbox"),
             }
         )
     manifest["items"].append(item)
@@ -291,7 +297,20 @@ def _prepare_image_asset(im: Image.Image, region: dict, asset_root) -> dict | No
     asset_dir.mkdir(parents=True, exist_ok=True)
     asset_path = asset_dir / f"{_safe_asset_name(region.get('id', kind))}.png"
     im.crop(crop_box).save(asset_path)
-    return {"kind": kind, "path": asset_path, "bbox": list(crop_box)}
+    return {
+        "kind": kind,
+        "path": asset_path,
+        "bbox": list(crop_box),
+        "crop_strategy": "mask_bbox" if region.get("mask") or region.get("polygon") else "bbox",
+    }
+
+
+def _mask_source(region: dict) -> str | None:
+    if region.get("mask"):
+        return "sam3_mask" if region.get("source") == "sam3" else "region_mask"
+    if region.get("polygon"):
+        return "polygon"
+    return None
 
 
 def _bounded_crop_box(

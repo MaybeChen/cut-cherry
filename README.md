@@ -144,6 +144,165 @@ curl http://localhost:8000/jobs/{job_id}/artifacts
 curl -OJ http://localhost:8000/jobs/{job_id}/download/pptx
 ```
 
+## SAM3 完整使用流程
+
+SAM3 是可选视觉分割能力，主要用于为 Layout 阶段补充图片、Logo、图标、示意图等视觉区域候选。当前支持两种方式：优先推荐使用独立的 Edit-Banana/SAM3 HTTP 服务；也可以在本进程内安装 `sam3` 包后走本地 runtime。无论哪种方式，SAM3 不可用时都会写入 warning 并继续执行基础 PPTX 生成链路。
+
+### 1. 准备输入文件
+
+把待转换图片放到 `input/` 目录，例如：
+
+```bash
+mkdir -p input
+cp /path/to/page.png input/page.png
+```
+
+### 2. 选择调用方式
+
+#### 方式 A：调用 Edit-Banana/SAM3 HTTP 服务（推荐）
+
+在单独环境中启动 Edit-Banana 里的 SAM3 服务，并确认服务可以接收 JSON POST 请求。服务端需要支持输入 `image_path`、`prompts`、`return_masks`、`mask_format`、`score_threshold`、`min_area` 等字段，并返回以下任意一种顶层结构：
+
+```json
+{
+  "image_size": {"width": 1280, "height": 720},
+  "results": [
+    {
+      "prompt": "logo",
+      "score": 0.91,
+      "bbox": [120, 80, 260, 180],
+      "polygon": [[120, 80], [260, 80], [260, 180], [120, 180]],
+      "mask": {"format": "rle", "data": "10,4,8", "shape": [720, 1280]}
+    }
+  ]
+}
+```
+
+本项目会兼容 `results`、`regions`、`items`、`detections` 四种顶层字段。每个 detection 至少需要包含 `bbox`、`box`、`mask_bbox` 或 `polygon` / `contour` 中的一种；如果没有 bbox，会从 polygon 推导 bbox。
+
+然后直接修改 `config/default.yaml` 中已经存在的 `models.sam3` 配置，不需要新建 `sam3_endpoint.yaml`：
+
+```yaml
+pipeline:
+  enable_sam3: true
+models:
+  sam3:
+    enabled: true
+    endpoint: http://127.0.0.1:7860/sam3
+    prompts: [icon, logo, image, figure, diagram symbol]
+    score_threshold: 0.5
+    min_area: 100
+    return_masks: false
+    mask_format: rle
+    timeout: 30
+```
+
+> 如果你的服务端必须知道运行设备，可以额外加 `send_device: true`；默认不发送 `device`，以便尽量贴近 Edit-Banana 风格服务的输入 schema。
+
+#### 方式 B：本地 SAM3 runtime（CPU 默认）
+
+如果希望本项目进程内直接加载 SAM3，需要像 Edit-Banana 一样先下载 `sam3_src` 源码并以 editable 模式安装。本项目提供了同名流程脚本：
+
+```bash
+bash scripts/setup_sam3.sh
+```
+
+该脚本会把 `facebookresearch/sam3` 克隆到仓库根目录的 `sam3_src/`，执行 `pip install -e sam3_src`，并把 BPE 词表复制到 `models/`。如果当前机器无法直连 GitHub，可以改用镜像地址：
+
+```bash
+SAM3_CLONE_URL="https://gitclone.com/github.com/facebookresearch/sam3.git" bash scripts/setup_sam3.sh
+```
+
+脚本会在安装 SAM3 前后执行兼容版本对齐：`numpy>=1.26,<2`、`opencv-python<4.13`、`scipy<1.18`、`tifffile<2026`，并运行 `pip check`。这组约束同时满足 `sam3 0.1.0` 的 `numpy<2,>=1.26` 与 `paddlex 3.7.1` 的 `numpy<2.4,>=1.24`，避免安装过程中被升级到 `numpy 2.5.0` 后产生依赖冲突。如果你的运行环境有更严格的制品库约束，可以用 `NUMPY_SPEC` 等变量覆盖：
+
+```bash
+NUMPY_SPEC="numpy>=1.26,<2" OPENCV_SPEC="opencv-python<4.13" bash scripts/setup_sam3.sh
+```
+
+当前默认配置按 CPU 运行（`models.sam3.device: cpu`）；CPU 可用于调试但速度较慢。如果后续切到 GPU，再把 `device` 或命令行 `--device` 改成 `cuda`。完成源码安装后，把 checkpoint 和 BPE 文件放到 `models/` 目录。示例目录：
+
+```text
+models/
+  sam3/
+    sam3.pt
+    bpe_simple_vocab_16e6.txt.gz
+```
+
+本地 runtime 也直接修改 `config/default.yaml` 中已经存在的 `models.sam3` 配置，不需要新建额外 YAML：
+
+```yaml
+pipeline:
+  enable_sam3: true
+models:
+  sam3:
+    enabled: true
+    device: cpu
+    endpoint: null
+    send_device: false
+    timeout: 30
+    sam3_src_path: sam3_src
+    source_path: null
+    model_path: models/sam3/sam3.pt
+    checkpoint_path: models/sam3/sam3.pt
+    bpe_path: models/sam3/bpe_simple_vocab_16e6.txt.gz
+    load_from_hf: false
+    prompts: [icon, logo, image, figure, diagram symbol]
+    score_threshold: 0.5
+    epsilon_factor: 0.02
+    min_area: 100
+    return_masks: false
+```
+
+本地模式会懒加载 `torch` 与 `sam3`，在配置了 `model_path` / `checkpoint_path` 且文件存在时才初始化模型；如果 `sam3` 未安装但 `sam3_src_path` 指向的源码目录存在，会先把该目录加入 `sys.path` 再尝试导入；仍不可用时会记录 `sam3_runtime_not_installed` warning 并继续后续流程。
+
+### 3. 运行 CLI 转换
+
+使用 endpoint 配置时，先按上文把 endpoint 写入 `config/default.yaml`，然后直接运行默认配置：
+
+```bash
+poetry run image2pptx convert input/page.png --device cpu
+```
+
+或使用本地 runtime 配置时，先按上文把 `model_path` / `bpe_path` 写入 `config/default.yaml`，然后直接运行默认配置：
+
+```bash
+poetry run image2pptx convert input/page.png --device cuda
+```
+
+如果暂时不想启用 SAM3，可显式关闭：
+
+```bash
+poetry run image2pptx convert input/page.png --device cpu --no-sam3
+```
+
+运行时终端会输出类似：
+
+```text
+[image2pptx][sam3] regions=3 warnings=0 enabled=True
+```
+
+其中 `regions` 表示 SAM3 归一化后的候选区域数量；`warnings` 大于 0 时表示 endpoint 调用失败、本地 runtime 缺失、模型未配置等降级情况。
+
+### 4. 检查输出产物
+
+转换完成后查看本次任务目录：
+
+```text
+outputs/{job_id}/normalized.png
+outputs/{job_id}/slide_ir.json
+outputs/{job_id}/result.pptx
+```
+
+SAM3 候选会先进入 `ctx.candidates["sam3_regions"]`，再由 layout 规则合并到视觉区域中；最终可在 `slide_ir.json` 中检查生成的图片、Logo、图标候选是否被保留到 PPTX 结构里。
+
+### 5. 常见问题排查
+
+- `sam3_not_configured`：没有配置 `models.sam3.endpoint`，也没有配置存在的 `models.sam3.model_path` / `checkpoint_path`。请按上面的 endpoint 或本地 runtime 方式补充配置。
+- `sam3_endpoint_failed`：HTTP 服务不可达、超时或响应不是合法 JSON。请先用 `curl` 或服务端日志确认 endpoint 正常。
+- `sam3_runtime_not_installed`：选择了本地 runtime，但当前环境没有安装 `sam3` 包。请安装 SAM3 运行依赖，或改用 endpoint 方式。
+- `sam3_local_runtime_failed`：本地模型加载或推理失败。请检查 PyTorch/CUDA、checkpoint 路径、BPE 路径和设备配置。
+- 视觉候选或图片数量偏少：通常是 `score_threshold` 过高、`min_area` 过大、prompts 只覆盖 icon/logo 而未覆盖 photo/screenshot/figure，或规则 fallback 只把较小连通域当作 icon。默认配置已下调 `score_threshold`、`min_area`，并扩展 prompts；规则 fallback 也会把中等面积的彩色/深色前景块补成 `image_candidate`，以召回更多嵌入图片。
+
 ## 当前已实现能力
 
 - 图片 EXIF 修复、RGB/RGBA 规范化、灰度/边缘/LAB/HSV/preview 中间产物。
@@ -198,6 +357,8 @@ poetry run pip install "paddlex[ocr]"
 
 
 Layout 阶段现在会优先尝试 `models.layout.engine` 指定的结构化模型，并在模型不可用、缺少本地配置或推理失败时自动回退到规则版 OCR + OpenCV layout。默认配置使用 `pp_structure_v3`，且 `allow_auto_download=false`，因此不会偷偷下载模型。
+
+如果你已经生成过 `models/layout/pp_structure_v3/PP-StructureV3.yaml` 并且里面的模型路径已经补成本地路径，则不需要再次导出或重新生成这个 config；保留当前 `config/default.yaml` 的 `models.layout.paddlex_config` 指向该文件即可。只有在 YAML 缺失、切换 PP-StructureV3/PaddleOCR-VL、升级 PaddleOCR/PaddleX pipeline，或本地模型目录结构变化时，才需要重新导出或重新运行 `scripts/patch_pp_structure_config.py`。
 
 所有应用侧 layout 配置都定义在 `config/default.yaml` 的 `models.layout` 下；不需要额外新建 `config/layout_paddleocr_vl_local.yaml`。需要切换 PP-StructureV3 或 PaddleOCR-VL 时，直接修改 `config/default.yaml` 中的 `models.layout.engine`、`paddlex_config`、`allow_auto_download` 等字段即可。
 
