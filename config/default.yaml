@@ -54,10 +54,10 @@ models:
     checkpoint_path: null
     bpe_path: null
     load_from_hf: false
-    prompts: [icon, logo, image, figure, diagram symbol]
-    score_threshold: 0.5
+    prompts: [icon, logo, image, photo, picture, figure, illustration, screenshot, chart, diagram symbol, product image]
+    score_threshold: 0.35
     epsilon_factor: 0.02
-    min_area: 100
+    min_area: 40
     return_masks: false
     mask_format: rle
   rmbg:

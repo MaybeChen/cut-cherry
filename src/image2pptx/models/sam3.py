@@ -23,7 +23,19 @@ import numpy as np
 from PIL import Image
 
 
-DEFAULT_PROMPTS = ["icon", "logo", "image", "figure", "diagram symbol"]
+DEFAULT_PROMPTS = [
+    "icon",
+    "logo",
+    "image",
+    "photo",
+    "picture",
+    "figure",
+    "illustration",
+    "screenshot",
+    "chart",
+    "diagram symbol",
+    "product image",
+]
 
 
 class Sam3Adapter:
