@@ -33,10 +33,12 @@ poetry install
 poetry run image2pptx convert input/input.png --device cpu
 ```
 
-### Windows CPU + OCR
+### Windows CPU + OCR / PP-StructureV3
 
 ```powershell
 poetry install --with ocr
+# 如果你已经有旧环境且仍报 paddlex extra 缺失，可补装：
+poetry run pip install "paddlex[ocr]"
 poetry run image2pptx convert input/input.png --device cpu
 ```
 
@@ -183,6 +185,85 @@ outputs/{job_id}/slide_ir.json
 outputs/{job_id}/ocr_results.json
 outputs/{job_id}/result.pptx
 ```
+
+## PaddleOCR-VL / PP-StructureV3 接入
+
+PP-StructureV3 依赖 PaddleX 的 OCR extras。如果导出或启动时报 `PP-StructureV3 requires additional dependencies`，请先运行：
+
+```bash
+poetry install --with ocr
+# 或在已有虚拟环境中补装
+poetry run pip install "paddlex[ocr]"
+```
+
+
+Layout 阶段现在会优先尝试 `models.layout.engine` 指定的结构化模型，并在模型不可用、缺少本地配置或推理失败时自动回退到规则版 OCR + OpenCV layout。默认配置使用 `pp_structure_v3`，且 `allow_auto_download=false`，因此不会偷偷下载模型。
+
+所有应用侧 layout 配置都定义在 `config/default.yaml` 的 `models.layout` 下；不需要额外新建 `config/layout_paddleocr_vl_local.yaml`。需要切换 PP-StructureV3 或 PaddleOCR-VL 时，直接修改 `config/default.yaml` 中的 `models.layout.engine`、`paddlex_config`、`allow_auto_download` 等字段即可。
+
+CPU/离线建议先准备 PP-StructureV3 的 PaddleX 配置或本地模型目录，然后在 `config/default.yaml` 中设置：
+
+```yaml
+models:
+  layout:
+    engine: pp_structure_v3
+    allow_auto_download: false
+    paddlex_config: models/layout/pp_structure_v3/PP-StructureV3.yaml
+    layout_model_dir: models/layout/pp_structure_v3
+```
+
+`PP-StructureV3.yaml` 不是手写给本项目解析的 YAML，而是 PaddleOCR/PaddleX 的 pipeline 配置文件。推荐先用 PaddleOCR 官方导出命令生成默认配置，再把其中的 `model_dir` 字段改成本地模型路径：
+
+```bash
+poetry run python -c "from paddleocr import PPStructureV3; PPStructureV3().export_paddlex_config_to_yaml('models/layout/pp_structure_v3/PP-StructureV3.yaml')"
+```
+
+这个 YAML 通常包含 `SubModules.LayoutDetection`、`SubPipelines.GeneralOCR`、`TextDetection`、`TextRecognition` 等模块配置；官方文档示例中也说明了可以把这些模块下的 `model_dir: null` 替换成你自己的本地模型目录。
+
+如需快速验证官方默认模型，可临时在 `config/default.yaml` 中显式允许 PaddleOCR/PaddleX 自行下载：
+
+```yaml
+models:
+  layout:
+    engine: pp_structure_v3
+    allow_auto_download: true
+```
+
+PaddleOCR-VL 建议也下载到本地。推荐先用 Hugging Face CLI 或内部制品库把模型放到 `models/layout/paddleocr_vl/`：
+
+```bash
+huggingface-cli download PaddlePaddle/PaddleOCR-VL-1.6 --local-dir models/layout/paddleocr_vl
+```
+
+然后准备本地 PaddleX pipeline YAML，例如 `models/layout/paddleocr_vl/PaddleOCR-VL.yaml`，让 YAML 中的 VLM 路径指向 `models/layout/paddleocr_vl/`。本项目仍然只改 `config/default.yaml`：
+
+```yaml
+models:
+  layout:
+    engine: paddleocr_vl
+    allow_auto_download: false
+    paddlex_config: models/layout/paddleocr_vl/PaddleOCR-VL.yaml
+    pipeline_name: PaddleOCR-VL
+    paddleocr_vl_model_dir: models/layout/paddleocr_vl
+```
+
+如果只是联网快速验证 PaddleX 默认 pipeline，可以临时在 `config/default.yaml` 中显式允许下载：
+
+```yaml
+models:
+  layout:
+    engine: paddleocr_vl
+    allow_auto_download: true
+    pipeline_name: PaddleOCR-VL
+```
+
+转换完成后会额外输出：
+
+```text
+outputs/{job_id}/layout_results.json
+```
+
+该文件会记录 layout engine、模型识别数量、最终 layout regions、warnings 与 fallback 状态。
 
 ## PaddleOCR 版本兼容说明
 
