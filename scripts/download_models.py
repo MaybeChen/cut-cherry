@@ -58,6 +58,10 @@ def main() -> None:
     print('  # or: poetry run pip install "paddlex[ocr]"')
     print("Example command to export a PP-StructureV3 PaddleX config:")
     print(
+        "  WARNING: PPStructureV3() creates the full pipeline and may download many default sub-models."
+    )
+    print("  Run this only on an online bootstrap machine, then copy the YAML to offline hosts.")
+    print(
         '  python -c "from paddleocr import PPStructureV3; '
         "PPStructureV3().export_paddlex_config_to_yaml('models/layout/pp_structure_v3/PP-StructureV3.yaml')\""
     )
@@ -65,6 +69,10 @@ def main() -> None:
     print(
         "  huggingface-cli download PaddlePaddle/PaddleOCR-VL-1.6 "
         "--local-dir models/layout/paddleocr_vl"
+    )
+    print("Patch exported PP-StructureV3 YAML model_dir fields to local folders:")
+    print(
+        "  python scripts/patch_pp_structure_config.py --config models/layout/pp_structure_v3/PP-StructureV3.yaml --model-root models/layout/pp_structure_v3"
     )
     print("Point models.layout.paddlex_config to a local PaddleX YAML that references this folder.")
 

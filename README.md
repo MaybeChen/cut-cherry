@@ -212,13 +212,25 @@ models:
     layout_model_dir: models/layout/pp_structure_v3
 ```
 
-`PP-StructureV3.yaml` 不是手写给本项目解析的 YAML，而是 PaddleOCR/PaddleX 的 pipeline 配置文件。推荐先用 PaddleOCR 官方导出命令生成默认配置，再把其中的 `model_dir` 字段改成本地模型路径：
+`PP-StructureV3.yaml` 不是手写给本项目解析的 YAML，而是 PaddleOCR/PaddleX 的 pipeline 配置文件。注意：直接执行 `PPStructureV3()` 会创建完整 pipeline，PaddleX 会按默认配置准备 LayoutDetection、OCR、Table、Formula、Chart 等子模块，因此可能联网下载很多默认模型。这个导出命令只适合在“联网引导机器”上执行一次：
 
 ```bash
+# ONLINE BOOTSTRAP ONLY: may download PP-StructureV3 default sub-models
 poetry run python -c "from paddleocr import PPStructureV3; PPStructureV3().export_paddlex_config_to_yaml('models/layout/pp_structure_v3/PP-StructureV3.yaml')"
 ```
 
-这个 YAML 通常包含 `SubModules.LayoutDetection`、`SubPipelines.GeneralOCR`、`TextDetection`、`TextRecognition` 等模块配置；官方文档示例中也说明了可以把这些模块下的 `model_dir: null` 替换成你自己的本地模型目录。
+离线/生产环境不要直接运行上面的命令；应从联网机器或制品库复制已经导出的 `PP-StructureV3.yaml`，再把其中的 `model_dir` 字段改成本地模型路径。这个 YAML 通常包含 `SubModules.LayoutDetection`、`SubPipelines.GeneralOCR`、`TextDetection`、`TextRecognition` 等模块配置；官方文档示例中也说明了可以把这些模块下的 `model_dir: null` 替换成你自己的本地模型目录。
+
+
+你当前下载的 PP-StructureV3 模型目录如果和 `model_name` 同名，例如 `PP-DocLayout_plus-L/`、`PP-OCRv5_server_det/`、`SLANet_plus/`，可以用脚本自动把 YAML 里的 `model_dir: null` 补成本地路径：
+
+```bash
+poetry run python scripts/patch_pp_structure_config.py \
+  --config models/layout/pp_structure_v3/PP-StructureV3.yaml \
+  --model-root models/layout/pp_structure_v3
+```
+
+脚本会按每个节点的 `model_name` 查找同名目录，例如 `model_name: PP-DocLayout_plus-L` 会填成 `models/layout/pp_structure_v3/PP-DocLayout_plus-L`。如果某个目录缺失，会打印 missing 列表。
 
 如需快速验证官方默认模型，可临时在 `config/default.yaml` 中显式允许 PaddleOCR/PaddleX 自行下载：
 

@@ -59,10 +59,22 @@ poetry install --with ocr
 # or: poetry run pip install "paddlex[ocr]"
 ```
 
-Generate the PP-StructureV3 PaddleX config with:
+Generate the PP-StructureV3 PaddleX config on an online bootstrap machine only. Instantiating `PPStructureV3()` can download multiple default sub-models before exporting the YAML:
 
 ```bash
+# ONLINE BOOTSTRAP ONLY: may download PP-StructureV3 default sub-models
 poetry run python -c "from paddleocr import PPStructureV3; PPStructureV3().export_paddlex_config_to_yaml('models/layout/pp_structure_v3/PP-StructureV3.yaml')"
 ```
 
-Then edit the exported YAML and replace each required `model_dir: null` with local model folders under `models/layout/pp_structure_v3/`.
+For offline machines, copy this exported YAML from your artifact store instead of running the command. Then edit the exported YAML and replace each required `model_dir: null` with local model folders under `models/layout/pp_structure_v3/`.
+
+
+If your downloaded PP-StructureV3 folders are named by `model_name`, patch the exported YAML automatically:
+
+```bash
+poetry run python scripts/patch_pp_structure_config.py \
+  --config models/layout/pp_structure_v3/PP-StructureV3.yaml \
+  --model-root models/layout/pp_structure_v3
+```
+
+Example mapping: `model_name: PP-DocLayout_plus-L` becomes `model_dir: models/layout/pp_structure_v3/PP-DocLayout_plus-L`.
