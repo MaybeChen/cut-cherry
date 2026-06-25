@@ -259,4 +259,136 @@ def test_candidate_fusion_manifest_records_mask_metadata(tmp_path):
     assert item["has_mask"] is True
     assert item["has_polygon"] is True
     assert item["mask_source"] == "sam3_mask"
-    assert item["crop_strategy"] == "mask_bbox"
+    assert item["crop_strategy"] == "mask_alpha"
+
+
+def test_candidate_fusion_applies_sam3_png_mask_alpha(tmp_path):
+    import base64
+    import io
+
+    normalized = tmp_path / "normalized.png"
+    Image.new("RGB", (100, 80), "red").save(normalized)
+    mask = Image.new("L", (100, 80), 0)
+    for y in range(10, 50):
+        for x in range(20, 70):
+            mask.putpixel((x, y), 255)
+    buffer = io.BytesIO()
+    mask.save(buffer, format="PNG")
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    ctx = SimpleNamespace(
+        job_id="job_alpha",
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        settings=SimpleNamespace(
+            pipeline=SimpleNamespace(enable_rmbg=True),
+            models=SimpleNamespace(rmbg={"enabled": True}),
+        ),
+        candidates={
+            "layout_regions": [
+                {
+                    "id": "sam3_icon",
+                    "kind": "icon_candidate",
+                    "bbox": [20, 10, 70, 50],
+                    "confidence": 0.9,
+                    "source": "sam3",
+                    "mask": {"format": "png", "data": encoded, "shape": [80, 100]},
+                }
+            ],
+            "text_blocks": [],
+            "shapes": [],
+            "formulas": [],
+            "charts": [],
+            "connectors": [],
+        },
+    )
+
+    CandidateFusionProcessor().run(ctx)
+
+    asset = Image.open(tmp_path / "assets" / "icons" / "sam3_icon.png")
+    assert asset.mode == "RGBA"
+    assert asset.getpixel((0, 0))[3] == 255
+    manifest = json.loads((tmp_path / "assets" / "image_assets.json").read_text())
+    assert manifest["items"][0]["alpha_applied"] is True
+    assert manifest["items"][0]["mask_source"] == "sam3_mask"
+    assert manifest["items"][0]["crop_strategy"] == "mask_alpha"
+
+
+def test_candidate_fusion_applies_rmbg_fallback_alpha_for_logo(tmp_path):
+    normalized = tmp_path / "normalized.png"
+    image = Image.new("RGB", (100, 80), "white")
+    for y in range(20, 60):
+        for x in range(30, 70):
+            image.putpixel((x, y), (0, 80, 200))
+    image.save(normalized)
+    ctx = SimpleNamespace(
+        job_id="job_rmbg",
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        settings=SimpleNamespace(
+            pipeline=SimpleNamespace(enable_rmbg=True),
+            models=SimpleNamespace(rmbg={"enabled": True}),
+        ),
+        candidates={
+            "layout_regions": [
+                {
+                    "id": "logo_fallback",
+                    "kind": "logo_candidate",
+                    "bbox": [20, 10, 80, 70],
+                    "confidence": 0.8,
+                }
+            ],
+            "text_blocks": [],
+            "shapes": [],
+            "formulas": [],
+            "charts": [],
+            "connectors": [],
+        },
+    )
+
+    CandidateFusionProcessor().run(ctx)
+
+    asset = Image.open(tmp_path / "assets" / "logos" / "logo_fallback.png")
+    assert asset.mode == "RGBA"
+    assert asset.getpixel((0, 0))[3] == 0
+    assert asset.getpixel((30, 30))[3] == 255
+    manifest = json.loads((tmp_path / "assets" / "image_assets.json").read_text())
+    assert manifest["items"][0]["mask_source"] == "rmbg_fallback"
+
+
+def test_candidate_fusion_applies_polygon_alpha(tmp_path):
+    normalized = tmp_path / "normalized.png"
+    Image.new("RGB", (80, 80), "green").save(normalized)
+    ctx = SimpleNamespace(
+        job_id="job_polygon_alpha",
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        settings=SimpleNamespace(
+            pipeline=SimpleNamespace(enable_rmbg=False),
+            models=SimpleNamespace(rmbg={"enabled": False}),
+        ),
+        candidates={
+            "layout_regions": [
+                {
+                    "id": "poly_icon",
+                    "kind": "icon_candidate",
+                    "bbox": [10, 10, 50, 50],
+                    "confidence": 0.8,
+                    "polygon": [[20, 20], [40, 20], [40, 40], [20, 40]],
+                }
+            ],
+            "text_blocks": [],
+            "shapes": [],
+            "formulas": [],
+            "charts": [],
+            "connectors": [],
+        },
+    )
+
+    CandidateFusionProcessor().run(ctx)
+
+    asset = Image.open(tmp_path / "assets" / "icons" / "poly_icon.png")
+    assert asset.mode == "RGBA"
+    assert asset.getpixel((0, 0))[3] == 0
+    assert asset.getpixel((15, 15))[3] == 255
+    manifest = json.loads((tmp_path / "assets" / "image_assets.json").read_text())
+    assert manifest["items"][0]["mask_source"] == "polygon"

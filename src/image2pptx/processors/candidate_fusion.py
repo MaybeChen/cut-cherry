@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import re
+import base64
+import io
 
-from PIL import Image
+from PIL import Image, ImageDraw
 from image2pptx.ir.elements import (
     EditableStrategy,
     ElementStyle,
@@ -13,6 +15,7 @@ from image2pptx.ir.elements import (
     SlideElement,
 )
 from image2pptx.ir.slide_ir import SlideIR
+from image2pptx.models.rmbg import RmbgAdapter
 from image2pptx.pipeline.context import PipelineContext
 
 
@@ -71,7 +74,7 @@ class CandidateFusionProcessor:
                 "candidate",
                 f"id={image_region.get('id')} kind={image_region.get('kind')} bbox={image_region.get('bbox')}",
             )
-            asset = _prepare_image_asset(im, image_region, asset_root)
+            asset = _prepare_image_asset(im, image_region, asset_root, ctx)
             if not asset:
                 _record_asset_manifest_item(
                     asset_manifest, image_region, status="skipped_invalid_bbox"
@@ -271,6 +274,8 @@ def _record_asset_manifest_item(
                 "bounded_bbox": asset["bbox"],
                 "element_type": element_type,
                 "crop_strategy": asset.get("crop_strategy", "bbox"),
+                "alpha_applied": bool(asset.get("alpha_applied")),
+                "mask_source": asset.get("mask_source") or _mask_source(region),
             }
         )
     manifest["items"].append(item)
@@ -288,7 +293,9 @@ def _print_asset_event(stage: str, message: str) -> None:
     print(f"[image2pptx][assets][{stage}] {message}")
 
 
-def _prepare_image_asset(im: Image.Image, region: dict, asset_root) -> dict | None:
+def _prepare_image_asset(
+    im: Image.Image, region: dict, asset_root, ctx: PipelineContext | None = None
+) -> dict | None:
     crop_box = _bounded_crop_box(region.get("bbox", []), im.width, im.height)
     if crop_box is None:
         return None
@@ -296,13 +303,110 @@ def _prepare_image_asset(im: Image.Image, region: dict, asset_root) -> dict | No
     asset_dir = asset_root / _asset_subdir(kind)
     asset_dir.mkdir(parents=True, exist_ok=True)
     asset_path = asset_dir / f"{_safe_asset_name(region.get('id', kind))}.png"
-    im.crop(crop_box).save(asset_path)
+    cropped = im.crop(crop_box).convert("RGBA")
+    alpha_mask, mask_source = _asset_alpha_mask(region, crop_box, im.size, cropped.size)
+    if alpha_mask is None and _should_use_rmbg_fallback(kind, ctx):
+        alpha_mask, mask_source = _rmbg_alpha_from_model_or_fallback(cropped, ctx)
+    if alpha_mask is not None:
+        cropped.putalpha(alpha_mask)
+    cropped.save(asset_path)
     return {
         "kind": kind,
         "path": asset_path,
         "bbox": list(crop_box),
-        "crop_strategy": "mask_bbox" if region.get("mask") or region.get("polygon") else "bbox",
+        "crop_strategy": "mask_alpha" if alpha_mask is not None else "bbox",
+        "alpha_applied": alpha_mask is not None,
+        "mask_source": mask_source,
     }
+
+
+def _asset_alpha_mask(
+    region: dict, crop_box: tuple[int, int, int, int], image_size: tuple[int, int], crop_size: tuple[int, int]
+) -> tuple[Image.Image | None, str | None]:
+    mask = _decode_region_mask(region.get("mask"), image_size)
+    if mask is not None:
+        return mask.crop(crop_box).resize(crop_size), _mask_source(region) or "region_mask"
+    polygon = region.get("polygon")
+    if isinstance(polygon, list) and polygon:
+        x1, y1, _x2, _y2 = crop_box
+        alpha = Image.new("L", crop_size, 0)
+        draw = ImageDraw.Draw(alpha)
+        points = [(float(point[0]) - x1, float(point[1]) - y1) for point in polygon if len(point) >= 2]
+        if len(points) >= 3:
+            draw.polygon(points, fill=255)
+            return alpha, "polygon"
+    return None, None
+
+
+def _decode_region_mask(mask: object, image_size: tuple[int, int]) -> Image.Image | None:
+    if not isinstance(mask, dict):
+        return None
+    fmt = mask.get("format")
+    data = mask.get("data")
+    shape = mask.get("shape")
+    if fmt == "png" and isinstance(data, str):
+        raw = base64.b64decode(data)
+        return Image.open(io.BytesIO(raw)).convert("L").resize(image_size)
+    if fmt == "rle" and isinstance(data, str) and isinstance(shape, list) and len(shape) >= 2:
+        height, width = int(shape[0]), int(shape[1])
+        values: list[int] = []
+        current = 0
+        for run in data.split(","):
+            if not run:
+                continue
+            length = int(run)
+            values.extend([current] * length)
+            current = 255 if current == 0 else 0
+        expected = width * height
+        values = (values + [0] * expected)[:expected]
+        return Image.frombytes("L", (width, height), bytes(values)).resize(image_size)
+    return None
+
+
+def _should_use_rmbg_fallback(kind: str, ctx: PipelineContext | None) -> bool:
+    if kind not in {"logo", "icon"} or ctx is None or not hasattr(ctx, "settings"):
+        return False
+    pipeline_enabled = bool(getattr(ctx.settings.pipeline, "enable_rmbg", True))
+    model_config = getattr(ctx.settings.models, "rmbg", {})
+    model_enabled = bool(model_config.get("enabled", True)) if isinstance(model_config, dict) else True
+    return pipeline_enabled and model_enabled
+
+
+def _rmbg_alpha_from_model_or_fallback(
+    cropped: Image.Image, ctx: PipelineContext | None
+) -> tuple[Image.Image | None, str | None]:
+    if ctx is not None and hasattr(ctx, "settings"):
+        model_config = getattr(ctx.settings.models, "rmbg", {})
+        if isinstance(model_config, dict):
+            adapter = RmbgAdapter(model_config, getattr(ctx, "device", "cpu"))
+            alpha, warnings = adapter.infer_alpha(cropped)
+            if alpha is not None:
+                return alpha, "rmbg_model"
+            if warnings:
+                ctx.candidates.setdefault("rmbg_warnings", []).extend(warnings)
+    alpha = _rmbg_like_alpha_from_background(cropped)
+    return alpha, "rmbg_fallback" if alpha is not None else None
+
+
+def _rmbg_like_alpha_from_background(cropped: Image.Image) -> Image.Image | None:
+    rgb = cropped.convert("RGB")
+    width, height = rgb.size
+    if width < 2 or height < 2:
+        return None
+    corners = [rgb.getpixel((0, 0)), rgb.getpixel((width - 1, 0)), rgb.getpixel((0, height - 1)), rgb.getpixel((width - 1, height - 1))]
+    bg = tuple(sorted(channel_values)[len(channel_values) // 2] for channel_values in zip(*corners))
+    alpha = Image.new("L", (width, height), 255)
+    pixels = alpha.load()
+    rgb_pixels = rgb.load()
+    for y in range(height):
+        for x in range(width):
+            px = rgb_pixels[x, y]
+            distance = sum(abs(int(px[i]) - int(bg[i])) for i in range(3)) / 3
+            if distance < 10:
+                pixels[x, y] = 0
+            elif distance < 35:
+                pixels[x, y] = int((distance - 10) / 25 * 255)
+    return alpha
 
 
 def _mask_source(region: dict) -> str | None:
