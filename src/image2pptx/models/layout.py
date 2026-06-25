@@ -84,8 +84,12 @@ def _create_pipeline(engine: str, config: dict[str, Any], device: str) -> Any:
         if importlib.util.find_spec("paddlex") is not None:
             paddlex = importlib.import_module("paddlex")
             create_pipeline = getattr(paddlex, "create_pipeline")
-            pipeline_name = config.get("pipeline_name", "PaddleOCR-VL")
-            return create_pipeline(pipeline=pipeline_name)
+            pipeline = (
+                str(config["paddlex_config"])
+                if config.get("paddlex_config")
+                else config.get("pipeline_name", "PaddleOCR-VL")
+            )
+            return create_pipeline(pipeline=pipeline)
         paddleocr = importlib.import_module("paddleocr")
         cls = getattr(paddleocr, "PaddleOCRVL", None)
         if cls is None:

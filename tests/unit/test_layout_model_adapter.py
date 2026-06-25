@@ -92,3 +92,41 @@ def test_layout_parser_writes_model_report_and_merges_fallback(tmp_path, monkeyp
     assert ctx.candidates["layout_regions"][0]["text"] == "Model title"
     assert (tmp_path / "layout_results.json").exists()
     assert ctx.artifacts["layout_results"] == tmp_path / "layout_results.json"
+
+
+def test_paddleocr_vl_uses_local_paddlex_config(monkeypatch, tmp_path):
+    calls = []
+
+    class FakePipeline:
+        def predict(self, input, **kwargs):
+            return [{"label": "table", "bbox": [1, 2, 3, 4], "score": 0.8}]
+
+    def fake_create_pipeline(**kwargs):
+        calls.append(kwargs)
+        return FakePipeline()
+
+    fake_paddlex = SimpleNamespace(create_pipeline=fake_create_pipeline)
+
+    def fake_find_spec(name):
+        return object() if name == "paddlex" else None
+
+    monkeypatch.setattr(layout_model.importlib.util, "find_spec", fake_find_spec)
+    monkeypatch.setattr(layout_model.importlib, "import_module", lambda name: fake_paddlex)
+    config_path = tmp_path / "PaddleOCR-VL.yaml"
+    config_path.write_text("pipeline: PaddleOCR-VL\n", encoding="utf-8")
+    image = tmp_path / "page.png"
+    image.write_bytes(b"fake")
+
+    adapter = LayoutModelAdapter(
+        {
+            "engine": "paddleocr_vl",
+            "allow_auto_download": False,
+            "paddlex_config": str(config_path),
+        },
+        "cpu",
+    )
+    regions, warnings = adapter.infer(image)
+
+    assert warnings == []
+    assert calls == [{"pipeline": str(config_path)}]
+    assert regions[0]["kind"] == "table_candidate"

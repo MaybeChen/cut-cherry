@@ -207,7 +207,23 @@ models:
     allow_auto_download: true
 ```
 
-PaddleOCR-VL 可通过 PaddleX pipeline 入口验证：
+PaddleOCR-VL 建议也下载到本地。推荐先用 Hugging Face CLI 或内部制品库把模型放到 `models/layout/paddleocr_vl/`：
+
+```bash
+huggingface-cli download PaddlePaddle/PaddleOCR-VL-1.6 --local-dir models/layout/paddleocr_vl
+```
+
+然后准备本地 PaddleX pipeline YAML，例如 `models/layout/paddleocr_vl/PaddleOCR-VL.yaml`，让 YAML 中的 VLM 路径指向 `models/layout/paddleocr_vl/`。本项目配置使用该本地 YAML：
+
+```yaml
+models:
+  layout:
+    engine: paddleocr_vl
+    allow_auto_download: false
+    paddlex_config: models/layout/paddleocr_vl/PaddleOCR-VL.yaml
+```
+
+如果只是联网快速验证 PaddleX 默认 pipeline，可以显式允许下载：
 
 ```yaml
 models:
