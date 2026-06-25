@@ -23,7 +23,9 @@ class CandidateFusionProcessor:
         layout_regions = ctx.candidates.get("layout_regions", [])
         table_regions = [r for r in layout_regions if r.get("kind") == "table_candidate"]
         image_regions = [
-            r for r in layout_regions if r.get("kind") in {"image_candidate", "logo_candidate"}
+            r
+            for r in layout_regions
+            if r.get("kind") in {"image_candidate", "logo_candidate", "icon_candidate"}
         ]
         formula_regions = ctx.candidates.get("formulas", [])
         chart_regions = ctx.candidates.get("charts", [])
@@ -58,10 +60,12 @@ class CandidateFusionProcessor:
         asset_manifest = _start_asset_manifest(ctx, asset_root, image_regions)
         _print_asset_event(
             "start",
-            f"image/logo candidates={len(image_regions)} output={asset_root}",
+            f"image/logo/icon candidates={len(image_regions)} output={asset_root}",
         )
         if not image_regions:
-            _print_asset_event("skip", "no image_candidate/logo_candidate regions found")
+            _print_asset_event(
+                "skip", "no image_candidate/logo_candidate/icon_candidate regions found"
+            )
         for image_region in image_regions:
             _print_asset_event(
                 "candidate",
@@ -78,7 +82,7 @@ class CandidateFusionProcessor:
                 )
                 continue
             x1, y1, x2, y2 = asset["bbox"]
-            element_type = ElementType.LOGO if asset["kind"] == "logo" else ElementType.IMAGE
+            element_type = _asset_element_type(asset["kind"])
             raw_region = dict(image_region)
             raw_region["asset"] = {
                 "path": str(asset["path"]),
@@ -101,12 +105,12 @@ class CandidateFusionProcessor:
                     id=image_region["id"],
                     type=element_type,
                     bbox=Rect(x=x1, y=y1, width=x2 - x1, height=y2 - y1),
-                    z_index=40 if element_type == ElementType.LOGO else 15,
+                    z_index=40 if element_type in {ElementType.LOGO, ElementType.ICON} else 15,
                     confidence=image_region["confidence"],
                     provenance=Provenance(source="layout_parser", raw=raw_region),
                     editable_strategy=(
                         EditableStrategy.TRANSPARENT_PNG
-                        if element_type == ElementType.LOGO
+                        if element_type in {ElementType.LOGO, ElementType.ICON}
                         else EditableStrategy.RASTER_IMAGE
                     ),
                     asset_path=asset["path"],
@@ -281,7 +285,7 @@ def _prepare_image_asset(im: Image.Image, region: dict, asset_root) -> dict | No
     if crop_box is None:
         return None
     kind = _asset_kind(region, crop_box, im.width, im.height)
-    asset_dir = asset_root / ("logos" if kind == "logo" else "images")
+    asset_dir = asset_root / _asset_subdir(kind)
     asset_dir.mkdir(parents=True, exist_ok=True)
     asset_path = asset_dir / f"{_safe_asset_name(region.get('id', kind))}.png"
     im.crop(crop_box).save(asset_path)
@@ -303,6 +307,22 @@ def _bounded_crop_box(
     return x1, y1, x2, y2
 
 
+def _asset_element_type(kind: str) -> ElementType:
+    if kind == "logo":
+        return ElementType.LOGO
+    if kind == "icon":
+        return ElementType.ICON
+    return ElementType.IMAGE
+
+
+def _asset_subdir(kind: str) -> str:
+    if kind == "logo":
+        return "logos"
+    if kind == "icon":
+        return "icons"
+    return "images"
+
+
 def _asset_kind(region: dict, crop_box: tuple[int, int, int, int], width: int, height: int) -> str:
     label = " ".join(
         str(value).lower()
@@ -316,6 +336,8 @@ def _asset_kind(region: dict, crop_box: tuple[int, int, int, int], width: int, h
     )
     if "logo" in label:
         return "logo"
+    if "icon" in label:
+        return "icon"
     x1, y1, x2, y2 = crop_box
     box_w = x2 - x1
     box_h = y2 - y1

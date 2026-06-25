@@ -205,6 +205,10 @@ def _normalize_kind(label: str) -> str:
     label = label.lower()
     if "table" in label:
         return "table_candidate"
+    if "logo" in label:
+        return "logo_candidate"
+    if "icon" in label:
+        return "icon_candidate"
     if "image" in label or "figure" in label or "pic" in label:
         return "image_candidate"
     if "title" in label:

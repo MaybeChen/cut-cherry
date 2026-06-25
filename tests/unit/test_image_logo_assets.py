@@ -44,3 +44,26 @@ def test_get_slide_size_reads_normalized_artifact(tmp_path) -> None:
     ctx = type("Ctx", (), {"artifacts": {"normalized": normalized}})()
 
     assert _get_slide_size(ctx) == (640, 360)
+
+
+def test_detect_raster_icon_candidates_from_foreground_components(tmp_path) -> None:
+    from types import SimpleNamespace
+
+    from PIL import ImageDraw
+
+    from image2pptx.processors.layout_parser import _detect_raster_icon_candidates
+
+    normalized = tmp_path / "normalized.png"
+    image = Image.new("RGB", (240, 160), "white")
+    draw = ImageDraw.Draw(image)
+    draw.ellipse((40, 35, 72, 67), fill="#1f77b4")
+    draw.rectangle((47, 42, 65, 60), fill="white")
+    image.save(normalized)
+    ctx = SimpleNamespace(artifacts={"normalized": normalized})
+
+    regions = _detect_raster_icon_candidates(ctx, text_blocks=[], slide_size=(240, 160))
+
+    assert regions
+    assert regions[0]["kind"] == "icon_candidate"
+    assert regions[0]["bbox"][0] <= 42
+    assert regions[0]["bbox"][2] >= 70

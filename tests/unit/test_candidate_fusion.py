@@ -148,8 +148,39 @@ def test_candidate_fusion_writes_asset_manifest_when_no_image_regions(tmp_path, 
     output = capsys.readouterr().out
     manifest_path = tmp_path / "assets" / "image_assets.json"
     manifest = json.loads(manifest_path.read_text())
-    assert "no image_candidate/logo_candidate regions found" in output
+    assert "no image_candidate/logo_candidate/icon_candidate regions found" in output
     assert manifest["job_id"] == "job_no_assets"
     assert manifest["candidate_count"] == 0
     assert manifest["items"] == []
     assert ctx.artifacts["image_assets"] == manifest_path
+
+
+def test_candidate_fusion_exports_icon_assets_separately(tmp_path):
+    normalized = tmp_path / "normalized.png"
+    Image.new("RGB", (240, 160), "white").save(normalized)
+    ctx = SimpleNamespace(
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        candidates={
+            "layout_regions": [
+                {
+                    "id": "icon_0",
+                    "kind": "icon_candidate",
+                    "bbox": [40, 35, 72, 67],
+                    "confidence": 0.5,
+                }
+            ],
+            "text_blocks": [],
+            "shapes": [],
+            "formulas": [],
+            "charts": [],
+            "connectors": [],
+        },
+    )
+
+    slide = CandidateFusionProcessor().run(ctx)
+    icon = next(element for element in slide.elements if element.id == "icon_0")
+
+    assert icon.type == ElementType.ICON
+    assert icon.asset_path == tmp_path / "assets" / "icons" / "icon_0.png"
+    assert icon.asset_path.exists()

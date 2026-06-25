@@ -4,6 +4,7 @@ import json
 from statistics import median
 from typing import Any
 
+import numpy as np
 from PIL import Image
 
 from image2pptx.models.layout import LayoutModelAdapter
@@ -60,9 +61,13 @@ def _build_rule_layout_regions(ctx: PipelineContext, text_blocks: list[dict]) ->
     layout_regions = [dict(block) for block in text_blocks]
     layout_regions.extend(_detect_table_candidates(ctx.candidates.get("lines", []), text_blocks))
     slide_size = _get_slide_size(ctx)
-    layout_regions.extend(
-        _detect_image_candidates(ctx.candidates.get("shapes", []), text_blocks, slide_size)
+    image_regions = _detect_image_candidates(
+        ctx.candidates.get("shapes", []), text_blocks, slide_size
     )
+    image_regions.extend(
+        _detect_raster_icon_candidates(ctx, text_blocks, slide_size, image_regions)
+    )
+    layout_regions.extend(image_regions)
     return layout_regions
 
 
@@ -300,6 +305,151 @@ def _detect_image_candidates(
             }
         )
     return regions
+
+
+def _detect_raster_icon_candidates(
+    ctx: PipelineContext,
+    text_blocks: list[dict],
+    slide_size: tuple[int, int] | None,
+    existing_image_regions: list[dict] | None = None,
+) -> list[dict]:
+    normalized = getattr(ctx, "artifacts", {}).get("normalized")
+    if not normalized or not slide_size:
+        return []
+    try:
+        with Image.open(normalized) as im:
+            components = _find_foreground_components(im.convert("RGB"))
+    except (OSError, ValueError):
+        return []
+
+    regions = []
+    occupied_regions = existing_image_regions or []
+    for component in components:
+        bbox = component["bbox"]
+        if any(_overlap_ratio(bbox, block["bbox"]) > 0.12 for block in text_blocks):
+            continue
+        if any(_overlap_ratio(bbox, region["bbox"]) > 0.5 for region in occupied_regions):
+            continue
+        if not _looks_like_icon(bbox, slide_size, component["area"]):
+            continue
+        region = {
+            "id": f"icon_candidate_{len(regions)}",
+            "kind": "icon_candidate",
+            "bbox": bbox,
+            "confidence": 0.5,
+            "source_ids": ["raster_foreground"],
+        }
+        regions.append(region)
+        occupied_regions.append(region)
+    return regions
+
+
+def _find_foreground_components(image: Image.Image) -> list[dict]:
+    original_width, original_height = image.size
+    max_side = max(original_width, original_height)
+    scale = 1.0
+    if max_side > 900:
+        scale = 900 / max_side
+        image = image.resize(
+            (max(1, int(original_width * scale)), max(1, int(original_height * scale))),
+            Image.Resampling.BILINEAR,
+        )
+    arr = np.asarray(image)
+    bg = np.median(
+        np.concatenate(
+            [
+                arr[:5].reshape(-1, 3),
+                arr[-5:].reshape(-1, 3),
+                arr[:, :5].reshape(-1, 3),
+                arr[:, -5:].reshape(-1, 3),
+            ],
+            axis=0,
+        ),
+        axis=0,
+    )
+    color_distance = np.abs(arr.astype(np.int16) - bg.astype(np.int16)).mean(axis=2)
+    darkness = arr.mean(axis=2) < 238
+    mask = (color_distance > 28) & darkness
+    components = _connected_components(mask)
+    if scale != 1.0:
+        inv = 1 / scale
+        for component in components:
+            x1, y1, x2, y2 = component["bbox"]
+            component["bbox"] = [x1 * inv, y1 * inv, x2 * inv, y2 * inv]
+            component["area"] = component["area"] * inv * inv
+    return _merge_nearby_components(components)
+
+
+def _connected_components(mask: np.ndarray) -> list[dict]:
+    height, width = mask.shape
+    visited = np.zeros_like(mask, dtype=bool)
+    components = []
+    for y in range(height):
+        xs = np.flatnonzero(mask[y] & ~visited[y])
+        for x in xs:
+            if visited[y, x] or not mask[y, x]:
+                continue
+            stack = [(int(x), int(y))]
+            visited[y, x] = True
+            min_x = max_x = int(x)
+            min_y = max_y = int(y)
+            area = 0
+            while stack:
+                cx, cy = stack.pop()
+                area += 1
+                min_x, max_x = min(min_x, cx), max(max_x, cx)
+                min_y, max_y = min(min_y, cy), max(max_y, cy)
+                for nx, ny in ((cx - 1, cy), (cx + 1, cy), (cx, cy - 1), (cx, cy + 1)):
+                    if (
+                        0 <= nx < width
+                        and 0 <= ny < height
+                        and mask[ny, nx]
+                        and not visited[ny, nx]
+                    ):
+                        visited[ny, nx] = True
+                        stack.append((nx, ny))
+            if area >= 20:
+                components.append(
+                    {"bbox": [min_x, min_y, max_x + 1, max_y + 1], "area": float(area)}
+                )
+    return components
+
+
+def _merge_nearby_components(components: list[dict], gap: float = 8.0) -> list[dict]:
+    merged: list[dict] = []
+    for component in sorted(components, key=lambda item: (item["bbox"][1], item["bbox"][0])):
+        for target in merged:
+            if _expanded_overlap(component["bbox"], target["bbox"], gap):
+                target["bbox"] = _union_bbox([target["bbox"], component["bbox"]])
+                target["area"] += component["area"]
+                break
+        else:
+            merged.append({"bbox": list(component["bbox"]), "area": component["area"]})
+    return merged
+
+
+def _expanded_overlap(a: list[float], b: list[float], gap: float) -> bool:
+    expanded = [a[0] - gap, a[1] - gap, a[2] + gap, a[3] + gap]
+    return not (
+        expanded[2] < b[0] or b[2] < expanded[0] or expanded[3] < b[1] or b[3] < expanded[1]
+    )
+
+
+def _looks_like_icon(bbox: list[float], slide_size: tuple[int, int], area: float) -> bool:
+    width, height = slide_size
+    x1, y1, x2, y2 = bbox
+    box_w = max(0.0, x2 - x1)
+    box_h = max(0.0, y2 - y1)
+    if box_w < 8 or box_h < 8:
+        return False
+    if box_w > width * 0.22 or box_h > height * 0.25:
+        return False
+    aspect = box_w / max(box_h, 1.0)
+    if aspect < 0.25 or aspect > 4.0:
+        return False
+    area_ratio = (box_w * box_h) / max(width * height, 1)
+    fill_ratio = area / max(box_w * box_h, 1.0)
+    return 0.00008 <= area_ratio <= 0.035 and fill_ratio >= 0.06
 
 
 def _get_slide_size(ctx: PipelineContext) -> tuple[int, int] | None:

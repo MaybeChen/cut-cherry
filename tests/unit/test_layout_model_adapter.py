@@ -168,3 +168,17 @@ def test_layout_adapter_reports_missing_paddlex_config(monkeypatch, tmp_path):
     assert available is False
     assert warnings[0]["reason"] == "local_layout_paddlex_config_missing"
     assert warnings[0]["paddlex_config"] == str(missing_config)
+
+
+def test_normalize_layout_result_maps_icon_and_logo_labels() -> None:
+    from image2pptx.models.layout import normalize_layout_result
+
+    regions = normalize_layout_result(
+        [
+            {"label": "icon", "bbox": [1, 2, 11, 12], "score": 0.8},
+            {"label": "logo", "bbox": [20, 2, 60, 22], "score": 0.9},
+        ]
+    )
+
+    assert regions[0]["kind"] == "icon_candidate"
+    assert regions[1]["kind"] == "logo_candidate"
