@@ -89,6 +89,12 @@ class TODOProcessor(LayoutParserProcessor):
 
 
 def _merge_text_into_blocks(text_items: list[dict]) -> list[dict]:
+    """Merge only OCR fragments that sit on the same visual line.
+
+    The project goal is one-to-one layout restoration, so this function keeps
+    separate visual lines as separate editable PPT text boxes instead of
+    merging nearby lines into paragraphs.
+    """
     rows = [_normalize_text_item(item) for item in text_items if item.get("text")]
     rows.sort(key=lambda item: (item["bbox"][1], item["bbox"][0]))
     if not rows:
@@ -96,7 +102,7 @@ def _merge_text_into_blocks(text_items: list[dict]) -> list[dict]:
 
     heights = [item["bbox"][3] - item["bbox"][1] for item in rows]
     typical_height = median(heights) if heights else 12.0
-    line_gap = max(typical_height * 0.65, 6.0)
+    line_gap = max(typical_height * 0.45, 4.0)
 
     lines: list[list[dict]] = []
     for item in rows:
@@ -108,28 +114,8 @@ def _merge_text_into_blocks(text_items: list[dict]) -> list[dict]:
         else:
             lines.append([item])
 
-    merged_lines = [_merge_line(line, i) for i, line in enumerate(lines)]
-    merged_lines.sort(key=lambda item: (item["bbox"][1], item["bbox"][0]))
-
-    blocks: list[dict] = []
-    current: list[dict] = []
-    for line in merged_lines:
-        if not current:
-            current = [line]
-            continue
-        prev = current[-1]
-        prev_height = prev["bbox"][3] - prev["bbox"][1]
-        vertical_gap = line["bbox"][1] - prev["bbox"][3]
-        horizontal_aligned = abs(line["bbox"][0] - prev["bbox"][0]) <= max(prev_height * 1.5, 16)
-        if vertical_gap <= max(prev_height * 1.2, 14) and horizontal_aligned:
-            current.append(line)
-        else:
-            blocks.append(_merge_paragraph(current, len(blocks)))
-            current = [line]
-    if current:
-        blocks.append(_merge_paragraph(current, len(blocks)))
-
-    return [_classify_text_block(block) for block in blocks]
+    merged_lines = [_classify_text_block(_merge_line(line, i)) for i, line in enumerate(lines)]
+    return sorted(merged_lines, key=lambda item: (item["bbox"][1], item["bbox"][0]))
 
 
 def _normalize_text_item(item: dict) -> dict:
@@ -200,7 +186,7 @@ def _detect_table_candidates(
             horizontal.append(line)
         elif abs(x2 - x1) <= 4 and abs(y2 - y1) >= 30:
             vertical.append(line)
-    if len(horizontal) < 2 or len(vertical) < 2:
+    if len(horizontal) < 3 or len(vertical) < 3:
         return []
 
     bboxes = []
@@ -216,7 +202,16 @@ def _detect_table_candidates(
         [point[1] for line in horizontal for point in line["points"]],
         tolerance=6.0,
     )
+    rows = max(0, len(y_edges) - 1)
+    cols = max(0, len(x_edges) - 1)
+    if rows < 2 or cols < 2:
+        return []
+    if _grid_intersection_ratio(horizontal, vertical) < 0.6:
+        return []
     cells = _assign_text_to_cells(text_blocks or [], x_edges, y_edges)
+    non_empty_cells = sum(1 for row in cells for cell in row if cell)
+    if text_blocks and non_empty_cells < 2:
+        return []
     return [
         {
             "id": "table_candidate_0",
@@ -226,11 +221,29 @@ def _detect_table_candidates(
             "source_ids": [line.get("id", "line") for line in horizontal + vertical],
             "x_edges": x_edges,
             "y_edges": y_edges,
-            "rows": max(0, len(y_edges) - 1),
-            "cols": max(0, len(x_edges) - 1),
+            "rows": rows,
+            "cols": cols,
             "cells": cells,
         }
     ]
+
+
+def _grid_intersection_ratio(horizontal: list[dict], vertical: list[dict]) -> float:
+    expected = len(horizontal) * len(vertical)
+    if not expected:
+        return 0.0
+    intersections = 0
+    for h_line in horizontal:
+        (hx1, hy1), (hx2, hy2) = h_line["points"]
+        h_min_x, h_max_x = sorted((hx1, hx2))
+        h_y = (hy1 + hy2) / 2
+        for v_line in vertical:
+            (vx1, vy1), (vx2, vy2) = v_line["points"]
+            v_x = (vx1 + vx2) / 2
+            v_min_y, v_max_y = sorted((vy1, vy2))
+            if h_min_x - 3 <= v_x <= h_max_x + 3 and v_min_y - 3 <= h_y <= v_max_y + 3:
+                intersections += 1
+    return intersections / expected
 
 
 def _detect_image_candidates(shapes: list[dict], text_blocks: list[dict]) -> list[dict]:
@@ -288,22 +301,24 @@ def _assign_text_to_cells(
         [{} for _ in range(len(x_edges) - 1)] for _ in range(len(y_edges) - 1)
     ]
     for block in text_blocks:
-        cx = (block["bbox"][0] + block["bbox"][2]) / 2
-        cy = (block["bbox"][1] + block["bbox"][3]) / 2
-        col = _find_interval(cx, x_edges)
-        row = _find_interval(cy, y_edges)
-        if row is None or col is None:
-            continue
-        cell = rows[row][col]
-        existing = cell.get("text")
-        cell.update(
-            {
-                "row": row,
-                "col": col,
-                "text": f"{existing}\n{block['text']}" if existing else block["text"],
-                "source_ids": cell.get("source_ids", []) + block.get("source_ids", [block["id"]]),
-            }
-        )
+        for item in block.get("raw_items", [block]):
+            cx = (item["bbox"][0] + item["bbox"][2]) / 2
+            cy = (item["bbox"][1] + item["bbox"][3]) / 2
+            col = _find_interval(cx, x_edges)
+            row = _find_interval(cy, y_edges)
+            if row is None or col is None:
+                continue
+            cell = rows[row][col]
+            existing = cell.get("text")
+            text = item.get("text", block.get("text", ""))
+            cell.update(
+                {
+                    "row": row,
+                    "col": col,
+                    "text": f"{existing}\n{text}" if existing else text,
+                    "source_ids": cell.get("source_ids", []) + item.get("source_ids", [item["id"]]),
+                }
+            )
     return rows
 
 
