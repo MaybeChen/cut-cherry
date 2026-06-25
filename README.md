@@ -144,6 +144,138 @@ curl http://localhost:8000/jobs/{job_id}/artifacts
 curl -OJ http://localhost:8000/jobs/{job_id}/download/pptx
 ```
 
+## SAM3 完整使用流程
+
+SAM3 是可选视觉分割能力，主要用于为 Layout 阶段补充图片、Logo、图标、示意图等视觉区域候选。当前支持两种方式：优先推荐使用独立的 Edit-Banana/SAM3 HTTP 服务；也可以在本进程内安装 `sam3` 包后走本地 runtime。无论哪种方式，SAM3 不可用时都会写入 warning 并继续执行基础 PPTX 生成链路。
+
+### 1. 准备输入文件
+
+把待转换图片放到 `input/` 目录，例如：
+
+```bash
+mkdir -p input
+cp /path/to/page.png input/page.png
+```
+
+### 2. 选择调用方式
+
+#### 方式 A：调用 Edit-Banana/SAM3 HTTP 服务（推荐）
+
+在单独环境中启动 Edit-Banana 里的 SAM3 服务，并确认服务可以接收 JSON POST 请求。服务端需要支持输入 `image_path`、`prompts`、`return_masks`、`mask_format`、`score_threshold`、`min_area` 等字段，并返回以下任意一种顶层结构：
+
+```json
+{
+  "image_size": {"width": 1280, "height": 720},
+  "results": [
+    {
+      "prompt": "logo",
+      "score": 0.91,
+      "bbox": [120, 80, 260, 180],
+      "polygon": [[120, 80], [260, 80], [260, 180], [120, 180]],
+      "mask": {"format": "rle", "data": "10,4,8", "shape": [720, 1280]}
+    }
+  ]
+}
+```
+
+本项目会兼容 `results`、`regions`、`items`、`detections` 四种顶层字段。每个 detection 至少需要包含 `bbox`、`box`、`mask_bbox` 或 `polygon` / `contour` 中的一种；如果没有 bbox，会从 polygon 推导 bbox。
+
+然后直接修改 `config/default.yaml` 中已经存在的 `models.sam3` 配置，不需要新建 `sam3_endpoint.yaml`：
+
+```yaml
+pipeline:
+  enable_sam3: true
+models:
+  sam3:
+    enabled: true
+    endpoint: http://127.0.0.1:7860/sam3
+    prompts: [icon, logo, image, figure, diagram symbol]
+    score_threshold: 0.5
+    min_area: 100
+    return_masks: false
+    mask_format: rle
+    timeout: 30
+```
+
+> 如果你的服务端必须知道运行设备，可以额外加 `send_device: true`；默认不发送 `device`，以便尽量贴近 Edit-Banana 风格服务的输入 schema。
+
+#### 方式 B：本地 SAM3 runtime
+
+如果希望本项目进程内直接加载 SAM3，需要在运行环境中安装 SAM3 及 PyTorch，并把 checkpoint 和可选 BPE 文件放到 `models/` 目录。示例目录：
+
+```text
+models/
+  sam3/
+    sam3.pt
+    bpe_simple_vocab_16e6.txt.gz
+```
+
+本地 runtime 也直接修改 `config/default.yaml` 中已经存在的 `models.sam3` 配置，不需要新建额外 YAML：
+
+```yaml
+pipeline:
+  enable_sam3: true
+models:
+  sam3:
+    enabled: true
+    model_path: models/sam3/sam3.pt
+    bpe_path: models/sam3/bpe_simple_vocab_16e6.txt.gz
+    prompts: [icon, logo, image, figure, diagram symbol]
+    score_threshold: 0.5
+    min_area: 100
+    return_masks: false
+```
+
+本地模式会懒加载 `torch` 与 `sam3`，在配置了 `model_path` 且文件存在时才初始化模型；如果 `sam3` 未安装，会记录 `sam3_runtime_not_installed` warning 并继续后续流程。
+
+### 3. 运行 CLI 转换
+
+使用 endpoint 配置时，先按上文把 endpoint 写入 `config/default.yaml`，然后直接运行默认配置：
+
+```bash
+poetry run image2pptx convert input/page.png --device cpu
+```
+
+或使用本地 runtime 配置时，先按上文把 `model_path` / `bpe_path` 写入 `config/default.yaml`，然后直接运行默认配置：
+
+```bash
+poetry run image2pptx convert input/page.png --device cuda
+```
+
+如果暂时不想启用 SAM3，可显式关闭：
+
+```bash
+poetry run image2pptx convert input/page.png --device cpu --no-sam3
+```
+
+运行时终端会输出类似：
+
+```text
+[image2pptx][sam3] regions=3 warnings=0 enabled=True
+```
+
+其中 `regions` 表示 SAM3 归一化后的候选区域数量；`warnings` 大于 0 时表示 endpoint 调用失败、本地 runtime 缺失、模型未配置等降级情况。
+
+### 4. 检查输出产物
+
+转换完成后查看本次任务目录：
+
+```text
+outputs/{job_id}/normalized.png
+outputs/{job_id}/slide_ir.json
+outputs/{job_id}/result.pptx
+```
+
+SAM3 候选会先进入 `ctx.candidates["sam3_regions"]`，再由 layout 规则合并到视觉区域中；最终可在 `slide_ir.json` 中检查生成的图片、Logo、图标候选是否被保留到 PPTX 结构里。
+
+### 5. 常见问题排查
+
+- `sam3_not_configured`：没有配置 `models.sam3.endpoint`，也没有配置存在的 `models.sam3.model_path` / `checkpoint_path`。请按上面的 endpoint 或本地 runtime 方式补充配置。
+- `sam3_endpoint_failed`：HTTP 服务不可达、超时或响应不是合法 JSON。请先用 `curl` 或服务端日志确认 endpoint 正常。
+- `sam3_runtime_not_installed`：选择了本地 runtime，但当前环境没有安装 `sam3` 包。请安装 SAM3 运行依赖，或改用 endpoint 方式。
+- `sam3_local_runtime_failed`：本地模型加载或推理失败。请检查 PyTorch/CUDA、checkpoint 路径、BPE 路径和设备配置。
+- 没有任何视觉候选：降低 `score_threshold`、减小 `min_area`，或增加更贴近页面内容的 prompts，例如 `[logo, icon, chart, product image, screenshot]`。
+
 ## 当前已实现能力
 
 - 图片 EXIF 修复、RGB/RGBA 规范化、灰度/边缘/LAB/HSV/preview 中间产物。
