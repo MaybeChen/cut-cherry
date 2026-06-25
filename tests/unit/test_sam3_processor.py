@@ -49,3 +49,46 @@ def test_sam3_processor_stores_regions_and_prints_summary(tmp_path, capsys) -> N
 
     assert ctx.candidates["sam3_regions"][0]["kind"] == "icon_candidate"
     assert "[image2pptx][sam3] regions=1 warnings=0" in capsys.readouterr().out
+
+
+def test_normalize_sam3_result_accepts_edit_banana_results_schema() -> None:
+    regions = normalize_sam3_result(
+        {
+            "image_size": {"width": 100, "height": 50},
+            "results": [
+                {
+                    "prompt": "diagram symbol",
+                    "score": 0.91,
+                    "bbox": [40, 30, 10, 5],
+                    "polygon": [[10, 5], [40, 5], [40, 30], [10, 30]],
+                    "mask": {"format": "rle", "data": "5,2,3", "shape": [50, 100]},
+                }
+            ],
+        }
+    )
+
+    assert regions == [
+        {
+            "id": "sam3_0",
+            "kind": "icon_candidate",
+            "bbox": [10.0, 5.0, 40.0, 30.0],
+            "confidence": 0.91,
+            "source": "sam3",
+            "raw": {
+                "prompt": "diagram symbol",
+                "score": 0.91,
+                "bbox": [40, 30, 10, 5],
+                "polygon": [[10, 5], [40, 5], [40, 30], [10, 30]],
+                "mask": {"format": "rle", "data": "5,2,3", "shape": [50, 100]},
+            },
+            "polygon": [[10, 5], [40, 5], [40, 30], [10, 30]],
+            "mask": {"format": "rle", "data": "5,2,3", "shape": [50, 100]},
+        }
+    ]
+
+
+def test_normalize_sam3_result_derives_bbox_from_polygon() -> None:
+    regions = normalize_sam3_result({"results": [{"prompt": "figure", "polygon": [[4, 8], [9, 3]]}]})
+
+    assert regions[0]["bbox"] == [4.0, 3.0, 9.0, 8.0]
+    assert regions[0]["kind"] == "image_candidate"

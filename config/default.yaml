@@ -46,6 +46,12 @@ models:
     enabled: true
     endpoint: null
     model_path: null
+    bpe_path: null
+    prompts: [icon, logo, image, figure, diagram symbol]
+    score_threshold: 0.5
+    min_area: 100
+    return_masks: false
+    mask_format: rle
   rmbg:
     enabled: true
     model_path: models/rmbg.onnx
