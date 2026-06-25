@@ -397,10 +397,20 @@ def _find_foreground_components(image: Image.Image) -> list[dict]:
     saturation = arr.max(axis=2).astype(np.int16) - arr.min(axis=2).astype(np.int16)
     # Prefer colorful foreground regions for icons.  This avoids dark OCR text
     # glyphs dominating connected components on diagram-heavy slides.
-    colored_foreground = (color_distance > 18) & (saturation > 22) & (luminance < 248)
+    colored_foreground = (color_distance > 18) & (saturation > 50) & (luminance < 248)
     neutral_foreground = (color_distance > 42) & (luminance < 190)
-    mask = colored_foreground | neutral_foreground
-    components = _connected_components(mask)
+    # Keep colorful icon blobs separate from nearby dark text glyphs.  A single
+    # combined foreground mask often joins an icon with its label, producing a
+    # wide component that fails the icon shape filters.  Detect colored and
+    # neutral components independently, then discard neutral fragments already
+    # covered by a colored component.
+    colored_components = _connected_components(colored_foreground, source="colored_foreground")
+    neutral_components = _connected_components(neutral_foreground, source="neutral_foreground")
+    components = colored_components + [
+        component
+        for component in neutral_components
+        if not any(_overlap_ratio(component["bbox"], colored["bbox"]) > 0.6 for colored in colored_components)
+    ]
     if scale != 1.0:
         inv = 1 / scale
         for component in components:
@@ -410,7 +420,7 @@ def _find_foreground_components(image: Image.Image) -> list[dict]:
     return _merge_nearby_components(components)
 
 
-def _connected_components(mask: np.ndarray) -> list[dict]:
+def _connected_components(mask: np.ndarray, source: str = "foreground") -> list[dict]:
     height, width = mask.shape
     visited = np.zeros_like(mask, dtype=bool)
     components = []
@@ -440,7 +450,11 @@ def _connected_components(mask: np.ndarray) -> list[dict]:
                         stack.append((nx, ny))
             if area >= 20:
                 components.append(
-                    {"bbox": [min_x, min_y, max_x + 1, max_y + 1], "area": float(area)}
+                    {
+                        "bbox": [min_x, min_y, max_x + 1, max_y + 1],
+                        "area": float(area),
+                        "source": source,
+                    }
                 )
     return components
 
@@ -449,12 +463,24 @@ def _merge_nearby_components(components: list[dict], gap: float = 4.0) -> list[d
     merged: list[dict] = []
     for component in sorted(components, key=lambda item: (item["bbox"][1], item["bbox"][0])):
         for target in merged:
+            if component.get("source") != target.get("primary_source"):
+                continue
             if _expanded_overlap(component["bbox"], target["bbox"], gap):
                 target["bbox"] = _union_bbox([target["bbox"], component["bbox"]])
                 target["area"] += component["area"]
+                target["sources"] = sorted(
+                    set(target.get("sources", [])) | {component.get("source", "foreground")}
+                )
                 break
         else:
-            merged.append({"bbox": list(component["bbox"]), "area": component["area"]})
+            merged.append(
+                {
+                    "bbox": list(component["bbox"]),
+                    "area": component["area"],
+                    "primary_source": component.get("source", "foreground"),
+                    "sources": [component.get("source", "foreground")],
+                }
+            )
     return merged
 
 

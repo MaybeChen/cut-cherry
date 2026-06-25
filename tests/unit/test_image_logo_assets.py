@@ -95,3 +95,30 @@ def test_detect_raster_icon_candidates_with_dark_frame_and_nearby_text(tmp_path)
     assert regions[0]["kind"] == "icon_candidate"
     assert regions[0]["bbox"][0] <= 44
     assert regions[0]["bbox"][2] < 84
+
+
+def test_detect_raster_icon_candidates_keeps_colored_icon_separate_from_touching_text(
+    tmp_path,
+) -> None:
+    from types import SimpleNamespace
+
+    from PIL import ImageDraw
+
+    from image2pptx.processors.layout_parser import _detect_raster_icon_candidates
+
+    normalized = tmp_path / "normalized.png"
+    image = Image.new("RGB", (320, 180), "#f8fafc")
+    draw = ImageDraw.Draw(image)
+    draw.ellipse((42, 42, 76, 76), fill="#2563eb")
+    # Simulate a dark OCR label touching the icon.  Color-first component
+    # extraction should still propose the icon without absorbing the label.
+    draw.rectangle((76, 50, 112, 68), fill="#0f172a")
+    image.save(normalized)
+    ctx = SimpleNamespace(artifacts={"normalized": normalized})
+
+    regions = _detect_raster_icon_candidates(ctx, text_blocks=[], slide_size=(320, 180))
+
+    assert regions
+    assert regions[0]["kind"] == "icon_candidate"
+    assert regions[0]["bbox"][0] <= 44
+    assert regions[0]["bbox"][2] < 82
