@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import io
 import json
 import os
 import warnings
+from contextlib import contextmanager, nullcontext, redirect_stderr, redirect_stdout
 from pathlib import Path
 from typing import Any, Callable
 
@@ -46,11 +48,13 @@ class TextProcessor:
             return
 
         _prepare_paddle_runtime_logs()
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message=".*No ccache found.*")
+        suppress_startup_logs = bool(ocr_config.get("suppress_startup_logs", True))
+        with _paddle_startup_log_context(suppress_startup_logs):
             paddleocr_module = importlib.import_module("paddleocr")
-        paddleocr_cls = getattr(paddleocr_module, "PaddleOCR")
-        ocr, api_version, ocr_warnings = _create_paddleocr(paddleocr_cls, ocr_config, ctx.device)
+            paddleocr_cls = getattr(paddleocr_module, "PaddleOCR")
+            ocr, api_version, ocr_warnings = _create_paddleocr(
+                paddleocr_cls, ocr_config, ctx.device
+            )
         if ocr is None:
             ctx.candidates["text"] = blocks
             ctx.candidates["text_warnings"] = ocr_warnings
@@ -79,6 +83,22 @@ class TextProcessor:
             status="succeeded" if ctx.candidates["text"] else "empty",
             warnings=ocr_warnings,
         )
+
+
+@contextmanager
+def _paddle_startup_log_context(suppress: bool):
+    if not suppress:
+        with nullcontext():
+            yield
+        return
+
+    # PaddleOCR prints model creation messages and Paddle may emit optional
+    # ccache warnings during import/model construction. Capture only this noisy
+    # startup window; inference errors are still returned through exceptions.
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message=".*No ccache found.*")
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            yield
 
 
 def _validate_local_model_names(ocr_config: dict[str, Any]) -> list[dict[str, Any]]:

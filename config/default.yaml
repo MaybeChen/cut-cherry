@@ -22,6 +22,7 @@ models:
     allow_auto_download: false
     enable_mkldnn: false
     cpu_threads: 1
+    suppress_startup_logs: true
     det_model_name: PP-OCRv6_medium_det
     rec_model_name: PP-OCRv6_medium_rec
     cls_model_name: PP-LCNet_x0_25_textline_ori

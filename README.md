@@ -199,3 +199,6 @@ PaddleOCR 3.x 离线本地模型建议同时配置模型名与模型目录，例
 
 
 如果 OCR 推理失败并输出 `ocr_inference_failed_onednn` 或 `ConvertPirAttribute2RuntimeAttribute`，这是 PaddlePaddle 3.x CPU oneDNN/PIR 路径兼容问题。工程会在导入 PaddleOCR 前默认设置 `FLAGS_use_mkldnn=0`、`FLAGS_enable_mkldnn=false`、`PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT=0`，并在 PaddleOCR 3.x 初始化参数中设置 `enable_mkldnn=false` 来禁用 oneDNN/MKLDNN；修改后请重新启动 CLI 进程再运行转换。如果仍失败，请更换与你的 Python / Windows 版本匹配的 PaddlePaddle CPU wheel。
+
+
+PaddleOCR / Paddle 在模型初始化阶段可能打印 `Creating model: ...`、Windows `信息: 用提供的模式无法找到文件。` 或可选的 `No ccache found` 提示。默认配置 `models.ocr.suppress_startup_logs=true` 会在 PaddleOCR 导入和模型构造期间捕获这些启动噪声；这不会隐藏 OCR 推理失败，真实错误仍会写入 `ocr_results.json`。如需调试 PaddleOCR 原始启动日志，可在 YAML 中设置 `suppress_startup_logs: false`。

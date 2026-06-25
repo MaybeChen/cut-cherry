@@ -175,3 +175,17 @@ def test_prepare_paddle_runtime_logs_disables_mkldnn(monkeypatch):
     assert os.environ["FLAGS_enable_mkldnn"] == "false"
     assert os.environ["PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT"] == "0"
     assert os.environ["DNNL_VERBOSE"] == "0"
+
+
+def test_paddle_startup_log_context_suppresses_optional_noise(capsys):
+    import warnings
+
+    from image2pptx.processors.text_processor import _paddle_startup_log_context
+
+    with _paddle_startup_log_context(True):
+        print("Creating model: noisy")
+        warnings.warn("No ccache found. Please be aware", UserWarning)
+
+    captured = capsys.readouterr()
+    assert "Creating model" not in captured.out
+    assert "No ccache" not in captured.err
