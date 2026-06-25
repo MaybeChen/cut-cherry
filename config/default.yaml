@@ -30,7 +30,18 @@ models:
     rec_model_dir: models/ocr/ppocrv6_medium_rec
     cls_model_dir: models/ocr/pp_lcnet_x0_25_textline_ori
   layout:
-    engine: paddleocr_vl
+    engine: pp_structure_v3
+    allow_auto_download: false
+    # Switch engine between pp_structure_v3 and paddleocr_vl here; no separate app config is required.
+    paddlex_config: null
+    model_dir: null
+    layout_model_dir: null
+    pipeline_name: PaddleOCR-VL
+    paddleocr_vl_model_dir: models/layout/paddleocr_vl
+    use_table_recognition: true
+    use_formula_recognition: true
+    use_chart_recognition: true
+    use_region_detection: true
   sam3:
     enabled: true
     endpoint: null
