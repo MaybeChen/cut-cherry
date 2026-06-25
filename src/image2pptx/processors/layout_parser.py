@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 from statistics import median
+from typing import Any
 
+from image2pptx.models.layout import LayoutModelAdapter
 from image2pptx.pipeline.context import PipelineContext
 
 
@@ -16,15 +19,69 @@ class LayoutParserProcessor:
 
     def run(self, ctx: PipelineContext) -> None:
         text_blocks = _merge_text_into_blocks(ctx.candidates.get("text", []))
-        layout_regions = [dict(block) for block in text_blocks]
-        layout_regions.extend(
-            _detect_table_candidates(ctx.candidates.get("lines", []), text_blocks)
-        )
-        layout_regions.extend(
-            _detect_image_candidates(ctx.candidates.get("shapes", []), text_blocks)
-        )
+        model_regions, model_warnings = _run_layout_model(ctx)
+        rule_regions = _build_rule_layout_regions(ctx, text_blocks)
+        layout_regions = _merge_model_and_rule_regions(model_regions, rule_regions)
         ctx.candidates["text_blocks"] = text_blocks
         ctx.candidates["layout_regions"] = layout_regions
+        if model_warnings:
+            ctx.candidates["layout_warnings"] = model_warnings
+        _write_layout_report(ctx, model_regions, layout_regions, model_warnings)
+
+
+def _run_layout_model(ctx: PipelineContext) -> tuple[list[dict], list[dict]]:
+    if not hasattr(ctx, "settings") or not hasattr(ctx, "artifacts"):
+        return [], [{"reason": "layout_model_context_unavailable"}]
+    adapter = LayoutModelAdapter(ctx.settings.models.layout, ctx.device)
+    try:
+        return adapter.infer(ctx.artifacts["normalized"])
+    except (RuntimeError, ValueError, TypeError, OSError) as exc:
+        return [], [{"reason": "layout_model_inference_failed", "message": str(exc)}]
+
+
+def _build_rule_layout_regions(ctx: PipelineContext, text_blocks: list[dict]) -> list[dict]:
+    layout_regions = [dict(block) for block in text_blocks]
+    layout_regions.extend(_detect_table_candidates(ctx.candidates.get("lines", []), text_blocks))
+    layout_regions.extend(_detect_image_candidates(ctx.candidates.get("shapes", []), text_blocks))
+    return layout_regions
+
+
+def _merge_model_and_rule_regions(
+    model_regions: list[dict], rule_regions: list[dict]
+) -> list[dict]:
+    if not model_regions:
+        return rule_regions
+    merged = [dict(region) for region in model_regions]
+    for region in rule_regions:
+        if any(
+            _overlap_ratio(region["bbox"], model_region["bbox"]) > 0.5
+            for model_region in model_regions
+        ):
+            continue
+        merged.append(region)
+    return merged
+
+
+def _write_layout_report(
+    ctx: PipelineContext,
+    model_regions: list[dict],
+    layout_regions: list[dict],
+    warnings: list[dict[str, Any]],
+) -> None:
+    if not hasattr(ctx, "job_dir") or not hasattr(ctx, "artifacts"):
+        return
+    report_path = ctx.job_dir / "layout_results.json"
+    report = {
+        "job_id": ctx.job_id,
+        "engine": ctx.settings.models.layout.get("engine", "rules"),
+        "status": "succeeded" if model_regions else "fallback_rules",
+        "model_count": len(model_regions),
+        "count": len(layout_regions),
+        "warnings": warnings,
+        "items": layout_regions,
+    }
+    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    ctx.artifacts["layout_results"] = report_path
 
 
 class TODOProcessor(LayoutParserProcessor):

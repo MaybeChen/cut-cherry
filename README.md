@@ -184,6 +184,47 @@ outputs/{job_id}/ocr_results.json
 outputs/{job_id}/result.pptx
 ```
 
+## PaddleOCR-VL / PP-StructureV3 接入
+
+Layout 阶段现在会优先尝试 `models.layout.engine` 指定的结构化模型，并在模型不可用、缺少本地配置或推理失败时自动回退到规则版 OCR + OpenCV layout。默认配置使用 `pp_structure_v3`，且 `allow_auto_download=false`，因此不会偷偷下载模型。
+
+CPU/离线建议先准备 PP-StructureV3 的 PaddleX 配置或本地模型目录：
+
+```yaml
+models:
+  layout:
+    engine: pp_structure_v3
+    allow_auto_download: false
+    paddlex_config: models/layout/PP-StructureV3.yaml
+```
+
+如需快速验证官方默认模型，可显式允许 PaddleOCR/PaddleX 自行下载：
+
+```yaml
+models:
+  layout:
+    engine: pp_structure_v3
+    allow_auto_download: true
+```
+
+PaddleOCR-VL 可通过 PaddleX pipeline 入口验证：
+
+```yaml
+models:
+  layout:
+    engine: paddleocr_vl
+    allow_auto_download: true
+    pipeline_name: PaddleOCR-VL
+```
+
+转换完成后会额外输出：
+
+```text
+outputs/{job_id}/layout_results.json
+```
+
+该文件会记录 layout engine、模型识别数量、最终 layout regions、warnings 与 fallback 状态。
+
 ## PaddleOCR 版本兼容说明
 
 PaddleOCR 3.x 的 Python API 已不再接受旧版 `use_gpu` 参数，设备选择使用 `device="cpu"` 或 `device="gpu"`；PaddleOCR 2.x 仍使用 `use_gpu=True/False`。本工程的 `TextProcessor` 会优先按 3.x API 初始化 `PaddleOCR`，如果当前环境安装的是 2.x 且出现 `Unknown argument`，会自动回退到 2.x 参数形态，不再因为 `ValueError: Unknown argument: use_gpu` 中断转换。

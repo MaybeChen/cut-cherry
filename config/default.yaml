@@ -30,7 +30,15 @@ models:
     rec_model_dir: models/ocr/ppocrv6_medium_rec
     cls_model_dir: models/ocr/pp_lcnet_x0_25_textline_ori
   layout:
-    engine: paddleocr_vl
+    engine: pp_structure_v3
+    allow_auto_download: false
+    paddlex_config: null
+    model_dir: null
+    layout_model_dir: null
+    use_table_recognition: true
+    use_formula_recognition: true
+    use_chart_recognition: true
+    use_region_detection: true
   sam3:
     enabled: true
     endpoint: null
