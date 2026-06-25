@@ -388,9 +388,15 @@ def _find_foreground_components(image: Image.Image) -> list[dict]:
         ),
         axis=0,
     )
-    color_distance = np.abs(arr.astype(np.int16) - bg.astype(np.int16)).mean(axis=2)
-    darkness = arr.mean(axis=2) < 238
-    mask = (color_distance > 28) & darkness
+    arr_i16 = arr.astype(np.int16)
+    color_distance = np.abs(arr_i16 - bg.astype(np.int16)).mean(axis=2)
+    luminance = arr.mean(axis=2)
+    saturation = arr.max(axis=2).astype(np.int16) - arr.min(axis=2).astype(np.int16)
+    # Prefer colorful foreground regions for icons.  This avoids dark OCR text
+    # glyphs dominating connected components on diagram-heavy slides.
+    colored_foreground = (color_distance > 18) & (saturation > 22) & (luminance < 248)
+    neutral_foreground = (color_distance > 42) & (luminance < 190)
+    mask = colored_foreground | neutral_foreground
     components = _connected_components(mask)
     if scale != 1.0:
         inv = 1 / scale
@@ -436,7 +442,7 @@ def _connected_components(mask: np.ndarray) -> list[dict]:
     return components
 
 
-def _merge_nearby_components(components: list[dict], gap: float = 8.0) -> list[dict]:
+def _merge_nearby_components(components: list[dict], gap: float = 4.0) -> list[dict]:
     merged: list[dict] = []
     for component in sorted(components, key=lambda item: (item["bbox"][1], item["bbox"][0])):
         for target in merged:
