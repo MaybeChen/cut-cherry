@@ -52,6 +52,7 @@ models:
     min_area: 100
     return_masks: false
     mask_format: rle
+    timeout: 30
   rmbg:
     enabled: true
     model_path: models/rmbg.onnx

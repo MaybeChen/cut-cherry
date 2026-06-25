@@ -180,7 +180,7 @@ cp /path/to/page.png input/page.png
 
 本项目会兼容 `results`、`regions`、`items`、`detections` 四种顶层字段。每个 detection 至少需要包含 `bbox`、`box`、`mask_bbox` 或 `polygon` / `contour` 中的一种；如果没有 bbox，会从 polygon 推导 bbox。
 
-然后新建一个本地配置文件，例如 `config/sam3_endpoint.yaml`：
+然后直接修改 `config/default.yaml` 中已经存在的 `models.sam3` 配置，不需要新建 `sam3_endpoint.yaml`：
 
 ```yaml
 pipeline:
@@ -210,7 +210,7 @@ models/
     bpe_simple_vocab_16e6.txt.gz
 ```
 
-新建本地配置文件，例如 `config/sam3_local.yaml`：
+本地 runtime 也直接修改 `config/default.yaml` 中已经存在的 `models.sam3` 配置，不需要新建额外 YAML：
 
 ```yaml
 pipeline:
@@ -230,16 +230,16 @@ models:
 
 ### 3. 运行 CLI 转换
 
-使用 endpoint 配置：
+使用 endpoint 配置时，先按上文把 endpoint 写入 `config/default.yaml`，然后直接运行默认配置：
 
 ```bash
-poetry run image2pptx convert input/page.png --config config/sam3_endpoint.yaml --device cpu
+poetry run image2pptx convert input/page.png --device cpu
 ```
 
-或使用本地 runtime 配置：
+或使用本地 runtime 配置时，先按上文把 `model_path` / `bpe_path` 写入 `config/default.yaml`，然后直接运行默认配置：
 
 ```bash
-poetry run image2pptx convert input/page.png --config config/sam3_local.yaml --device cuda
+poetry run image2pptx convert input/page.png --device cuda
 ```
 
 如果暂时不想启用 SAM3，可显式关闭：
