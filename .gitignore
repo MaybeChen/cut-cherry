@@ -6,6 +6,11 @@ __pycache__/
 .venv/
 sam3_src/
 sam_src/
+config/*.yaml
+!config/default.yaml
+!config/cpu.yaml
+!config/cuda.yaml
+!config/logging.yaml
 outputs/*
 !outputs/.gitkeep
 models/*
