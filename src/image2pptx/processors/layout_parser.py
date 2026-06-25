@@ -4,6 +4,8 @@ import json
 from statistics import median
 from typing import Any
 
+from PIL import Image
+
 from image2pptx.models.layout import LayoutModelAdapter
 from image2pptx.pipeline.context import PipelineContext
 
@@ -57,7 +59,10 @@ def _build_layout_model_error_warning(exc: BaseException) -> dict[str, str]:
 def _build_rule_layout_regions(ctx: PipelineContext, text_blocks: list[dict]) -> list[dict]:
     layout_regions = [dict(block) for block in text_blocks]
     layout_regions.extend(_detect_table_candidates(ctx.candidates.get("lines", []), text_blocks))
-    layout_regions.extend(_detect_image_candidates(ctx.candidates.get("shapes", []), text_blocks))
+    slide_size = _get_slide_size(ctx)
+    layout_regions.extend(
+        _detect_image_candidates(ctx.candidates.get("shapes", []), text_blocks, slide_size)
+    )
     return layout_regions
 
 
@@ -261,7 +266,11 @@ def _grid_intersection_ratio(horizontal: list[dict], vertical: list[dict]) -> fl
     return intersections / expected
 
 
-def _detect_image_candidates(shapes: list[dict], text_blocks: list[dict]) -> list[dict]:
+def _detect_image_candidates(
+    shapes: list[dict],
+    text_blocks: list[dict],
+    slide_size: tuple[int, int] | None = None,
+) -> list[dict]:
     regions = []
     for shape in shapes:
         bbox = [float(value) for value in shape.get("bbox", [])]
@@ -270,17 +279,50 @@ def _detect_image_candidates(shapes: list[dict], text_blocks: list[dict]) -> lis
         x1, y1, x2, y2 = bbox
         area = max(0.0, x2 - x1) * max(0.0, y2 - y1)
         overlaps_text = any(_overlap_ratio(bbox, block["bbox"]) > 0.2 for block in text_blocks)
-        if area >= 20_000 and not overlaps_text:
-            regions.append(
-                {
-                    "id": f"image_candidate_{len(regions)}",
-                    "kind": "image_candidate",
-                    "bbox": bbox,
-                    "confidence": min(float(shape.get("confidence", 0.4)), 0.6),
-                    "source_ids": [shape.get("id", "shape")],
-                }
-            )
+        if overlaps_text:
+            continue
+        kind = "image_candidate"
+        confidence = min(float(shape.get("confidence", 0.4)), 0.6)
+        if area >= 20_000:
+            pass
+        elif slide_size and _looks_like_logo(bbox, slide_size):
+            kind = "logo_candidate"
+            confidence = max(confidence, 0.55)
+        else:
+            continue
+        regions.append(
+            {
+                "id": f"{kind}_{len(regions)}",
+                "kind": kind,
+                "bbox": bbox,
+                "confidence": confidence,
+                "source_ids": [shape.get("id", "shape")],
+            }
+        )
     return regions
+
+
+def _get_slide_size(ctx: PipelineContext) -> tuple[int, int] | None:
+    normalized = getattr(ctx, "artifacts", {}).get("normalized")
+    if not normalized:
+        return None
+    try:
+        with Image.open(normalized) as im:
+            return im.width, im.height
+    except (OSError, ValueError):
+        return None
+
+
+def _looks_like_logo(bbox: list[float], slide_size: tuple[int, int]) -> bool:
+    width, height = slide_size
+    x1, y1, x2, y2 = bbox
+    box_w = max(0.0, x2 - x1)
+    box_h = max(0.0, y2 - y1)
+    area_ratio = (box_w * box_h) / max(width * height, 1)
+    in_brand_band = y1 <= height * 0.18 or y2 >= height * 0.88
+    compact = 0.001 <= area_ratio <= 0.08 and box_w <= width * 0.42 and box_h <= height * 0.28
+    near_edge = x1 <= width * 0.18 or x2 >= width * 0.82
+    return in_brand_band and compact and near_edge
 
 
 def _union_bbox(bboxes: list[list[float]]) -> list[float]:

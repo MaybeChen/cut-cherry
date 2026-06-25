@@ -82,4 +82,39 @@ def test_candidate_fusion_promotes_layout_regions_to_table_and_image(tmp_path):
     assert element_types["chart_0"] == ElementType.CHART
     assert "text_block_0" not in element_types
     assert "shape_0" not in element_types
-    assert (tmp_path / "assets" / "image_candidate_0.png").exists()
+    assert (tmp_path / "assets" / "images" / "image_candidate_0.png").exists()
+
+
+def test_candidate_fusion_exports_logo_assets_separately(tmp_path):
+    normalized = tmp_path / "normalized.png"
+    Image.new("RGB", (400, 300), "white").save(normalized)
+    ctx = SimpleNamespace(
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        candidates={
+            "layout_regions": [
+                {
+                    "id": "brand_logo",
+                    "kind": "logo_candidate",
+                    "bbox": [-5, 8, 90, 58],
+                    "confidence": 0.7,
+                    "source_ids": ["shape_logo"],
+                }
+            ],
+            "text_blocks": [],
+            "shapes": [],
+            "formulas": [],
+            "charts": [],
+            "connectors": [],
+        },
+    )
+
+    slide = CandidateFusionProcessor().run(ctx)
+    logo = next(element for element in slide.elements if element.id == "brand_logo")
+
+    assert logo.type == ElementType.LOGO
+    assert logo.asset_path == tmp_path / "assets" / "logos" / "brand_logo.png"
+    assert logo.asset_path.exists()
+    assert logo.bbox.x == 0
+    assert logo.bbox.width == 90
+    assert logo.provenance.raw["asset"]["kind"] == "logo"

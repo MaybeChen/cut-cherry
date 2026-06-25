@@ -1,4 +1,7 @@
 from __future__ import annotations
+
+import re
+
 from PIL import Image
 from image2pptx.ir.elements import (
     EditableStrategy,
@@ -18,7 +21,9 @@ class CandidateFusionProcessor:
         slide = SlideIR(width=im.width, height=im.height)
         layout_regions = ctx.candidates.get("layout_regions", [])
         table_regions = [r for r in layout_regions if r.get("kind") == "table_candidate"]
-        image_regions = [r for r in layout_regions if r.get("kind") == "image_candidate"]
+        image_regions = [
+            r for r in layout_regions if r.get("kind") in {"image_candidate", "logo_candidate"}
+        ]
         formula_regions = ctx.candidates.get("formulas", [])
         chart_regions = ctx.candidates.get("charts", [])
         # 简单背景使用原生纯色，避免整页原图伪背景。
@@ -47,22 +52,33 @@ class CandidateFusionProcessor:
                     editable_strategy=EditableStrategy.NATIVE_TABLE,
                 )
             )
-        asset_dir = ctx.job_dir / "assets"
+        asset_root = ctx.job_dir / "assets"
         for image_region in image_regions:
-            x1, y1, x2, y2 = [int(round(value)) for value in image_region["bbox"]]
-            asset_dir.mkdir(parents=True, exist_ok=True)
-            asset_path = asset_dir / f"{image_region['id']}.png"
-            im.crop((x1, y1, x2, y2)).save(asset_path)
+            asset = _prepare_image_asset(im, image_region, asset_root)
+            if not asset:
+                continue
+            x1, y1, x2, y2 = asset["bbox"]
+            element_type = ElementType.LOGO if asset["kind"] == "logo" else ElementType.IMAGE
+            raw_region = dict(image_region)
+            raw_region["asset"] = {
+                "path": str(asset["path"]),
+                "kind": asset["kind"],
+                "bbox": asset["bbox"],
+            }
             slide.elements.append(
                 SlideElement(
                     id=image_region["id"],
-                    type=ElementType.IMAGE,
+                    type=element_type,
                     bbox=Rect(x=x1, y=y1, width=x2 - x1, height=y2 - y1),
-                    z_index=15,
+                    z_index=40 if element_type == ElementType.LOGO else 15,
                     confidence=image_region["confidence"],
-                    provenance=Provenance(source="layout_parser", raw=image_region),
-                    editable_strategy=EditableStrategy.RASTER_IMAGE,
-                    asset_path=asset_path,
+                    provenance=Provenance(source="layout_parser", raw=raw_region),
+                    editable_strategy=(
+                        EditableStrategy.TRANSPARENT_PNG
+                        if element_type == ElementType.LOGO
+                        else EditableStrategy.RASTER_IMAGE
+                    ),
+                    asset_path=asset["path"],
                 )
             )
         for formula in formula_regions:
@@ -180,3 +196,58 @@ def _overlap_ratio(a: list[float], b: list[float]) -> float:
     inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
     area = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1])
     return inter / area if area else 0.0
+
+
+def _prepare_image_asset(im: Image.Image, region: dict, asset_root) -> dict | None:
+    crop_box = _bounded_crop_box(region.get("bbox", []), im.width, im.height)
+    if crop_box is None:
+        return None
+    kind = _asset_kind(region, crop_box, im.width, im.height)
+    asset_dir = asset_root / ("logos" if kind == "logo" else "images")
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    asset_path = asset_dir / f"{_safe_asset_name(region.get('id', kind))}.png"
+    im.crop(crop_box).save(asset_path)
+    return {"kind": kind, "path": asset_path, "bbox": list(crop_box)}
+
+
+def _bounded_crop_box(
+    bbox: list[float], width: int, height: int
+) -> tuple[int, int, int, int] | None:
+    if len(bbox) != 4:
+        return None
+    x1, y1, x2, y2 = [int(round(float(value))) for value in bbox]
+    x1 = max(0, min(width, x1))
+    y1 = max(0, min(height, y1))
+    x2 = max(0, min(width, x2))
+    y2 = max(0, min(height, y2))
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return x1, y1, x2, y2
+
+
+def _asset_kind(region: dict, crop_box: tuple[int, int, int, int], width: int, height: int) -> str:
+    label = " ".join(
+        str(value).lower()
+        for value in (
+            region.get("kind"),
+            region.get("label"),
+            region.get("category"),
+            region.get("type"),
+        )
+        if value
+    )
+    if "logo" in label:
+        return "logo"
+    x1, y1, x2, y2 = crop_box
+    box_w = x2 - x1
+    box_h = y2 - y1
+    area_ratio = (box_w * box_h) / max(width * height, 1)
+    in_brand_band = y1 <= height * 0.18 or y2 >= height * 0.88
+    compact = area_ratio <= 0.08 and box_w <= width * 0.42 and box_h <= height * 0.28
+    near_edge = x1 <= width * 0.18 or x2 >= width * 0.82
+    return "logo" if in_brand_band and compact and near_edge else "image"
+
+
+def _safe_asset_name(value: object) -> str:
+    name = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value)).strip("._")
+    return name or "asset"
