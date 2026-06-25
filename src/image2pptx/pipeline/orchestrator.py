@@ -8,6 +8,7 @@ from image2pptx.processors.preprocess import PreprocessProcessor
 from image2pptx.processors.text_processor import TextProcessor
 from image2pptx.processors.geometry_processor import GeometryProcessor
 from image2pptx.processors.layout_parser import LayoutParserProcessor
+from image2pptx.processors.table_processor import TableProcessor
 from image2pptx.processors.formula_processor import FormulaProcessor
 from image2pptx.processors.chart_processor import ChartProcessor
 from image2pptx.processors.arrow_processor import ArrowProcessor
@@ -46,6 +47,8 @@ class ImageToPptxPipeline:
             ArrowProcessor().run(ctx)
         if self.settings.pipeline.enable_layout:
             LayoutParserProcessor().run(ctx)
+        if self.settings.pipeline.enable_table:
+            TableProcessor().run(ctx)
         if self.settings.pipeline.enable_formula:
             FormulaProcessor().run(ctx)
         if self.settings.pipeline.enable_chart:
