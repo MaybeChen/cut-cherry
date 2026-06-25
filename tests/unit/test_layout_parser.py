@@ -22,8 +22,8 @@ def test_layout_parser_adds_text_blocks_and_table_candidate():
     ctx = SimpleNamespace(
         candidates={
             "text": [
-                {"id": "text_0", "text": "A", "bbox": [10, 10, 30, 25], "confidence": 0.9},
-                {"id": "text_1", "text": "B", "bbox": [10, 32, 30, 47], "confidence": 0.9},
+                {"id": "text_0", "text": "A", "bbox": [110, 110, 130, 125], "confidence": 0.9},
+                {"id": "text_1", "text": "B", "bbox": [110, 132, 130, 147], "confidence": 0.9},
             ],
             "lines": [
                 {"id": "h1", "points": [[100, 100], [220, 100]], "confidence": 0.6},
@@ -38,4 +38,9 @@ def test_layout_parser_adds_text_blocks_and_table_candidate():
     LayoutParserProcessor().run(ctx)
 
     assert ctx.candidates["text_blocks"][0]["text"] == "A\nB"
-    assert any(region["kind"] == "table_candidate" for region in ctx.candidates["layout_regions"])
+    table = next(
+        region for region in ctx.candidates["layout_regions"] if region["kind"] == "table_candidate"
+    )
+    assert table["rows"] == 1
+    assert table["cols"] == 1
+    assert table["cells"][0][0]["text"] == "A\nB"

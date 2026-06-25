@@ -16,6 +16,9 @@ class CandidateFusionProcessor:
     def run(self, ctx: PipelineContext) -> SlideIR:
         im = Image.open(ctx.artifacts["normalized"])
         slide = SlideIR(width=im.width, height=im.height)
+        layout_regions = ctx.candidates.get("layout_regions", [])
+        table_regions = [r for r in layout_regions if r.get("kind") == "table_candidate"]
+        image_regions = [r for r in layout_regions if r.get("kind") == "image_candidate"]
         # 简单背景使用原生纯色，避免整页原图伪背景。
         slide.elements.append(
             SlideElement(
@@ -28,7 +31,41 @@ class CandidateFusionProcessor:
                 editable_strategy=EditableStrategy.NATIVE_SHAPE,
             )
         )
+        for table in table_regions:
+            x1, y1, x2, y2 = table["bbox"]
+            slide.elements.append(
+                SlideElement(
+                    id=table["id"],
+                    type=ElementType.TABLE,
+                    bbox=Rect(x=x1, y=y1, width=x2 - x1, height=y2 - y1),
+                    z_index=45,
+                    style=ElementStyle(fill_color="#ffffff", line_color="#666666"),
+                    confidence=table["confidence"],
+                    provenance=Provenance(source="layout_parser", raw=table),
+                    editable_strategy=EditableStrategy.NATIVE_TABLE,
+                )
+            )
+        asset_dir = ctx.job_dir / "assets"
+        for image_region in image_regions:
+            x1, y1, x2, y2 = [int(round(value)) for value in image_region["bbox"]]
+            asset_dir.mkdir(parents=True, exist_ok=True)
+            asset_path = asset_dir / f"{image_region['id']}.png"
+            im.crop((x1, y1, x2, y2)).save(asset_path)
+            slide.elements.append(
+                SlideElement(
+                    id=image_region["id"],
+                    type=ElementType.IMAGE,
+                    bbox=Rect(x=x1, y=y1, width=x2 - x1, height=y2 - y1),
+                    z_index=15,
+                    confidence=image_region["confidence"],
+                    provenance=Provenance(source="layout_parser", raw=image_region),
+                    editable_strategy=EditableStrategy.RASTER_IMAGE,
+                    asset_path=asset_path,
+                )
+            )
         for s in ctx.candidates.get("shapes", []):
+            if _is_covered_by_region(s["bbox"], table_regions + image_regions, min_ratio=0.85):
+                continue
             x1, y1, x2, y2 = s["bbox"]
             slide.elements.append(
                 SlideElement(
@@ -48,6 +85,8 @@ class CandidateFusionProcessor:
             )
         text_candidates = ctx.candidates.get("text_blocks") or ctx.candidates.get("text", [])
         for t in text_candidates:
+            if _is_covered_by_region(t["bbox"], table_regions, min_ratio=0.8):
+                continue
             x1, y1, x2, y2 = t["bbox"]
             font_size = None
             bold = False
@@ -93,3 +132,14 @@ class CandidateFusionProcessor:
         slide.validate_scene()
         slide.relations.extend(slide.find_overlaps(0.2))
         return slide
+
+
+def _is_covered_by_region(bbox: list[float], regions: list[dict], min_ratio: float) -> bool:
+    return any(_overlap_ratio(bbox, region["bbox"]) >= min_ratio for region in regions)
+
+
+def _overlap_ratio(a: list[float], b: list[float]) -> float:
+    ix1, iy1, ix2, iy2 = max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    area = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1])
+    return inter / area if area else 0.0

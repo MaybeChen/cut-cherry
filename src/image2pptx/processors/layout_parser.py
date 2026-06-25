@@ -17,7 +17,9 @@ class LayoutParserProcessor:
     def run(self, ctx: PipelineContext) -> None:
         text_blocks = _merge_text_into_blocks(ctx.candidates.get("text", []))
         layout_regions = [dict(block) for block in text_blocks]
-        layout_regions.extend(_detect_table_candidates(ctx.candidates.get("lines", [])))
+        layout_regions.extend(
+            _detect_table_candidates(ctx.candidates.get("lines", []), text_blocks)
+        )
         layout_regions.extend(
             _detect_image_candidates(ctx.candidates.get("shapes", []), text_blocks)
         )
@@ -127,7 +129,9 @@ def _classify_text_block(block: dict) -> dict:
     return block
 
 
-def _detect_table_candidates(lines: list[dict]) -> list[dict]:
+def _detect_table_candidates(
+    lines: list[dict], text_blocks: list[dict] | None = None
+) -> list[dict]:
     horizontal = []
     vertical = []
     for line in lines:
@@ -146,13 +150,28 @@ def _detect_table_candidates(lines: list[dict]) -> list[dict]:
     for line in horizontal + vertical:
         (x1, y1), (x2, y2) = line["points"]
         bboxes.append([min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)])
+    bbox = _union_bbox(bboxes)
+    x_edges = _dedupe_sorted_coords(
+        [point[0] for line in vertical for point in line["points"]],
+        tolerance=6.0,
+    )
+    y_edges = _dedupe_sorted_coords(
+        [point[1] for line in horizontal for point in line["points"]],
+        tolerance=6.0,
+    )
+    cells = _assign_text_to_cells(text_blocks or [], x_edges, y_edges)
     return [
         {
             "id": "table_candidate_0",
             "kind": "table_candidate",
-            "bbox": _union_bbox(bboxes),
-            "confidence": 0.55,
+            "bbox": bbox,
+            "confidence": 0.65 if cells else 0.55,
             "source_ids": [line.get("id", "line") for line in horizontal + vertical],
+            "x_edges": x_edges,
+            "y_edges": y_edges,
+            "rows": max(0, len(y_edges) - 1),
+            "cols": max(0, len(x_edges) - 1),
+            "cells": cells,
         }
     ]
 
@@ -186,6 +205,56 @@ def _union_bbox(bboxes: list[list[float]]) -> list[float]:
         max(bbox[2] for bbox in bboxes),
         max(bbox[3] for bbox in bboxes),
     ]
+
+
+def _dedupe_sorted_coords(values: list[float], tolerance: float) -> list[float]:
+    coords = sorted(float(value) for value in values)
+    if not coords:
+        return []
+    merged = [coords[0]]
+    for value in coords[1:]:
+        if abs(value - merged[-1]) <= tolerance:
+            merged[-1] = (merged[-1] + value) / 2
+        else:
+            merged.append(value)
+    return merged
+
+
+def _assign_text_to_cells(
+    text_blocks: list[dict],
+    x_edges: list[float],
+    y_edges: list[float],
+) -> list[list[dict]]:
+    if len(x_edges) < 2 or len(y_edges) < 2:
+        return []
+    rows: list[list[dict]] = [
+        [{} for _ in range(len(x_edges) - 1)] for _ in range(len(y_edges) - 1)
+    ]
+    for block in text_blocks:
+        cx = (block["bbox"][0] + block["bbox"][2]) / 2
+        cy = (block["bbox"][1] + block["bbox"][3]) / 2
+        col = _find_interval(cx, x_edges)
+        row = _find_interval(cy, y_edges)
+        if row is None or col is None:
+            continue
+        cell = rows[row][col]
+        existing = cell.get("text")
+        cell.update(
+            {
+                "row": row,
+                "col": col,
+                "text": f"{existing}\n{block['text']}" if existing else block["text"],
+                "source_ids": cell.get("source_ids", []) + block.get("source_ids", [block["id"]]),
+            }
+        )
+    return rows
+
+
+def _find_interval(value: float, edges: list[float]) -> int | None:
+    for index in range(len(edges) - 1):
+        if edges[index] <= value <= edges[index + 1]:
+            return index
+    return None
 
 
 def _average_confidence(items: list[dict]) -> float:

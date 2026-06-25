@@ -64,6 +64,27 @@ class PptxRenderer:
                 p.font.bold = e.style.bold
                 p.font.italic = e.style.italic
                 p.font.color.rgb = _hex_to_rgb(e.style.font_color)
+            elif e.type == ElementType.TABLE:
+                raw = e.provenance.raw
+                rows = max(1, int(raw.get("rows") or len(raw.get("cells", [])) or 1))
+                cols = max(
+                    1,
+                    int(
+                        raw.get("cols")
+                        or max((len(row) for row in raw.get("cells", [])), default=1)
+                    ),
+                )
+                table_shape = slide.shapes.add_table(rows, cols, x, y, w, h)
+                table = table_shape.table
+                for row_index, row in enumerate(raw.get("cells", [])[:rows]):
+                    for col_index, cell_data in enumerate(row[:cols]):
+                        if not cell_data:
+                            continue
+                        cell = table.cell(row_index, col_index)
+                        cell.text = str(cell_data.get("text", ""))
+                        for paragraph in cell.text_frame.paragraphs:
+                            paragraph.font.size = Pt(10)
+                            paragraph.font.color.rgb = _hex_to_rgb(e.style.font_color)
             elif e.type == ElementType.CONNECTOR:
                 slide.shapes.add_connector(1, x, y, Emu(x + w), Emu(y + h))
             elif e.asset_path:
