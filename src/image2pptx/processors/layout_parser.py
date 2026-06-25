@@ -126,11 +126,20 @@ def _write_layout_report(
         "status": "succeeded" if model_regions else "fallback_rules",
         "model_count": len(model_regions),
         "count": len(layout_regions),
+        "kind_counts": _count_kinds(layout_regions),
         "warnings": warnings,
         "items": layout_regions,
     }
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     ctx.artifacts["layout_results"] = report_path
+
+
+def _count_kinds(regions: list[dict]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for region in regions:
+        kind = str(region.get("kind", "unknown"))
+        counts[kind] = counts.get(kind, 0) + 1
+    return counts
 
 
 class TODOProcessor(LayoutParserProcessor):
