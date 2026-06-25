@@ -54,6 +54,7 @@ class LayoutModelAdapter:
             self.config.get("paddlex_config"),
             self.config.get("model_dir"),
             self.config.get("layout_model_dir"),
+            self.config.get("paddleocr_vl_model_dir"),
         ]
         if any(path and Path(str(path)).exists() for path in configured_paths):
             return True, warnings

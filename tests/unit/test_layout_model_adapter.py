@@ -130,3 +130,22 @@ def test_paddleocr_vl_uses_local_paddlex_config(monkeypatch, tmp_path):
     assert warnings == []
     assert calls == [{"pipeline": str(config_path)}]
     assert regions[0]["kind"] == "table_candidate"
+
+
+def test_layout_adapter_accepts_local_paddleocr_vl_model_dir(monkeypatch, tmp_path):
+    monkeypatch.setattr(layout_model.importlib.util, "find_spec", lambda name: object())
+    model_dir = tmp_path / "paddleocr_vl"
+    model_dir.mkdir()
+    adapter = LayoutModelAdapter(
+        {
+            "engine": "paddleocr_vl",
+            "allow_auto_download": False,
+            "paddleocr_vl_model_dir": str(model_dir),
+        },
+        "cpu",
+    )
+
+    available, warnings = adapter.available()
+
+    assert available is True
+    assert warnings == []

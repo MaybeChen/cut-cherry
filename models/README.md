@@ -49,4 +49,4 @@ PaddleOCR-VL should be downloaded explicitly before offline runs, for example:
 huggingface-cli download PaddlePaddle/PaddleOCR-VL-1.6 --local-dir models/layout/paddleocr_vl
 ```
 
-For this service, prefer a local PaddleX pipeline YAML and point `models.layout.paddlex_config` to it. The YAML should reference `models/layout/paddleocr_vl` so PaddleX does not fetch the VLM at runtime. Keep `models.layout.allow_auto_download=false` in production/offline environments.
+For this service, keep all application-side model settings in `config/default.yaml`. Prefer a local PaddleX pipeline YAML and point `models.layout.paddlex_config` to it from `config/default.yaml`. The YAML should reference `models/layout/paddleocr_vl` so PaddleX does not fetch the VLM at runtime. Keep `models.layout.allow_auto_download=false` in production/offline environments.
