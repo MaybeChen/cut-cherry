@@ -50,12 +50,21 @@ class LayoutModelAdapter:
     ) -> tuple[bool, list[dict[str, Any]]]:
         if bool(self.config.get("allow_auto_download", False)):
             return True, warnings
-        configured_paths = [
-            self.config.get("paddlex_config"),
-            self.config.get("model_dir"),
-            self.config.get("layout_model_dir"),
-            self.config.get("paddleocr_vl_model_dir"),
-        ]
+        if self.config.get("paddlex_config"):
+            path = Path(str(self.config["paddlex_config"]))
+            if path.exists():
+                return True, warnings
+            return False, [
+                {
+                    "reason": "local_layout_paddlex_config_missing",
+                    "engine": self.engine,
+                    "paddlex_config": str(path),
+                    "message": "Create/export the PaddleX pipeline YAML or set models.layout.allow_auto_download=true for online bootstrap.",
+                }
+            ]
+        configured_paths = [self.config.get("model_dir"), self.config.get("layout_model_dir")]
+        if self.engine in {"paddleocr_vl", "paddleocr-vl", "paddleocrvl"}:
+            configured_paths.append(self.config.get("paddleocr_vl_model_dir"))
         if any(path and Path(str(path)).exists() for path in configured_paths):
             return True, warnings
         return False, [

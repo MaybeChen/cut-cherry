@@ -149,3 +149,22 @@ def test_layout_adapter_accepts_local_paddleocr_vl_model_dir(monkeypatch, tmp_pa
 
     assert available is True
     assert warnings == []
+
+
+def test_layout_adapter_reports_missing_paddlex_config(monkeypatch, tmp_path):
+    monkeypatch.setattr(layout_model.importlib.util, "find_spec", lambda name: object())
+    missing_config = tmp_path / "missing.yaml"
+    adapter = LayoutModelAdapter(
+        {
+            "engine": "pp_structure_v3",
+            "allow_auto_download": False,
+            "paddlex_config": str(missing_config),
+        },
+        "cpu",
+    )
+
+    available, warnings = adapter.available()
+
+    assert available is False
+    assert warnings[0]["reason"] == "local_layout_paddlex_config_missing"
+    assert warnings[0]["paddlex_config"] == str(missing_config)

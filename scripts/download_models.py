@@ -51,7 +51,13 @@ def main() -> None:
         print(f"  {engine}: {description}")
     print("Create/download layout assets under:")
     print("  models/layout/pp_structure_v3/")
+    print("  models/layout/pp_structure_v3/PP-StructureV3.yaml")
     print("  models/layout/paddleocr_vl/")
+    print("Example command to export a PP-StructureV3 PaddleX config:")
+    print(
+        '  python -c "from paddleocr import PPStructureV3; '
+        "PPStructureV3().export_paddlex_config_to_yaml('models/layout/pp_structure_v3/PP-StructureV3.yaml')\""
+    )
     print("Example Hugging Face download command for PaddleOCR-VL:")
     print(
         "  huggingface-cli download PaddlePaddle/PaddleOCR-VL-1.6 "

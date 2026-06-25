@@ -198,7 +198,16 @@ models:
     engine: pp_structure_v3
     allow_auto_download: false
     paddlex_config: models/layout/pp_structure_v3/PP-StructureV3.yaml
+    layout_model_dir: models/layout/pp_structure_v3
 ```
+
+`PP-StructureV3.yaml` 不是手写给本项目解析的 YAML，而是 PaddleOCR/PaddleX 的 pipeline 配置文件。推荐先用 PaddleOCR 官方导出命令生成默认配置，再把其中的 `model_dir` 字段改成本地模型路径：
+
+```bash
+poetry run python -c "from paddleocr import PPStructureV3; PPStructureV3().export_paddlex_config_to_yaml('models/layout/pp_structure_v3/PP-StructureV3.yaml')"
+```
+
+这个 YAML 通常包含 `SubModules.LayoutDetection`、`SubPipelines.GeneralOCR`、`TextDetection`、`TextRecognition` 等模块配置；官方文档示例中也说明了可以把这些模块下的 `model_dir: null` 替换成你自己的本地模型目录。
 
 如需快速验证官方默认模型，可临时在 `config/default.yaml` 中显式允许 PaddleOCR/PaddleX 自行下载：
 

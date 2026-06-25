@@ -33,9 +33,9 @@ models:
     engine: pp_structure_v3
     allow_auto_download: false
     # Switch engine between pp_structure_v3 and paddleocr_vl here; no separate app config is required.
-    paddlex_config: null
+    paddlex_config: models/layout/pp_structure_v3/PP-StructureV3.yaml
     model_dir: null
-    layout_model_dir: null
+    layout_model_dir: models/layout/pp_structure_v3
     pipeline_name: PaddleOCR-VL
     paddleocr_vl_model_dir: models/layout/paddleocr_vl
     use_table_recognition: true

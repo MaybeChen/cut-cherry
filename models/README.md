@@ -36,6 +36,7 @@ models/
   layout/
     pp_structure_v3/
       PP-StructureV3.yaml
+      # exported by PPStructureV3().export_paddlex_config_to_yaml(...)
       # plus any local PaddleX model folders referenced by the YAML
     paddleocr_vl/
       config.json
@@ -50,3 +51,11 @@ huggingface-cli download PaddlePaddle/PaddleOCR-VL-1.6 --local-dir models/layout
 ```
 
 For this service, keep all application-side model settings in `config/default.yaml`. Prefer a local PaddleX pipeline YAML and point `models.layout.paddlex_config` to it from `config/default.yaml`. The YAML should reference `models/layout/paddleocr_vl` so PaddleX does not fetch the VLM at runtime. Keep `models.layout.allow_auto_download=false` in production/offline environments.
+
+Generate the PP-StructureV3 PaddleX config with:
+
+```bash
+poetry run python -c "from paddleocr import PPStructureV3; PPStructureV3().export_paddlex_config_to_yaml('models/layout/pp_structure_v3/PP-StructureV3.yaml')"
+```
+
+Then edit the exported YAML and replace each required `model_dir: null` with local model folders under `models/layout/pp_structure_v3/`.
