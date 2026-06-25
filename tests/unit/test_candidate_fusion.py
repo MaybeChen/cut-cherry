@@ -184,3 +184,41 @@ def test_candidate_fusion_exports_icon_assets_separately(tmp_path):
     assert icon.type == ElementType.ICON
     assert icon.asset_path == tmp_path / "assets" / "icons" / "icon_0.png"
     assert icon.asset_path.exists()
+
+
+def test_candidate_fusion_suppresses_ocr_text_inside_icon_region(tmp_path):
+    normalized = tmp_path / "normalized.png"
+    Image.new("RGB", (240, 160), "white").save(normalized)
+    ctx = SimpleNamespace(
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        candidates={
+            "layout_regions": [
+                {
+                    "id": "icon_0",
+                    "kind": "icon_candidate",
+                    "bbox": [40, 35, 72, 67],
+                    "confidence": 0.5,
+                }
+            ],
+            "text_blocks": [
+                {
+                    "id": "text_misread_icon",
+                    "kind": "text_line",
+                    "text": "o",
+                    "bbox": [44, 39, 68, 63],
+                    "confidence": 0.2,
+                }
+            ],
+            "shapes": [],
+            "formulas": [],
+            "charts": [],
+            "connectors": [],
+        },
+    )
+
+    slide = CandidateFusionProcessor().run(ctx)
+    element_ids = {element.id for element in slide.elements}
+
+    assert "icon_0" in element_ids
+    assert "text_misread_icon" not in element_ids

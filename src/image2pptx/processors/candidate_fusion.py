@@ -176,6 +176,8 @@ class CandidateFusionProcessor:
         for t in text_candidates:
             if _is_covered_by_region(t["bbox"], table_regions + formula_regions, min_ratio=0.8):
                 continue
+            if _is_covered_by_region(t["bbox"], image_regions, min_ratio=0.6):
+                continue
             x1, y1, x2, y2 = t["bbox"]
             font_size = None
             bold = False

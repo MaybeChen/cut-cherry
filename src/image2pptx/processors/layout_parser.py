@@ -58,17 +58,16 @@ def _build_layout_model_error_warning(exc: BaseException) -> dict[str, str]:
 
 
 def _build_rule_layout_regions(ctx: PipelineContext, text_blocks: list[dict]) -> list[dict]:
-    layout_regions = [dict(block) for block in text_blocks]
-    layout_regions.extend(_detect_table_candidates(ctx.candidates.get("lines", []), text_blocks))
     slide_size = _get_slide_size(ctx)
+    visual_suppression_blocks = _text_blocks_for_visual_suppression(text_blocks)
     image_regions = _detect_image_candidates(
-        ctx.candidates.get("shapes", []), text_blocks, slide_size
+        ctx.candidates.get("shapes", []), visual_suppression_blocks, slide_size
     )
     image_regions.extend(
-        _detect_raster_icon_candidates(ctx, text_blocks, slide_size, image_regions)
+        _detect_raster_icon_candidates(ctx, visual_suppression_blocks, slide_size, image_regions)
     )
-    layout_regions.extend(image_regions)
-    return layout_regions
+    table_regions = _detect_table_candidates(ctx.candidates.get("lines", []), text_blocks)
+    return image_regions + table_regions + [dict(block) for block in text_blocks]
 
 
 def _merge_model_and_rule_regions(
@@ -78,13 +77,35 @@ def _merge_model_and_rule_regions(
         return rule_regions
     merged = [dict(region) for region in model_regions]
     for region in rule_regions:
-        if any(
-            _overlap_ratio(region["bbox"], model_region["bbox"]) > 0.5
-            for model_region in model_regions
-        ):
+        if any(_should_drop_rule_region(region, model_region) for model_region in model_regions):
             continue
         merged.append(region)
     return merged
+
+
+def _should_drop_rule_region(rule_region: dict, model_region: dict) -> bool:
+    if _overlap_ratio(rule_region["bbox"], model_region["bbox"]) <= 0.5:
+        return False
+    if _is_visual_region(rule_region) and not _is_visual_region(model_region):
+        return False
+    return True
+
+
+def _is_visual_region(region: dict) -> bool:
+    return region.get("kind") in {"image_candidate", "logo_candidate", "icon_candidate"}
+
+
+def _text_blocks_for_visual_suppression(text_blocks: list[dict]) -> list[dict]:
+    blocks = []
+    for block in text_blocks:
+        text = str(block.get("text", "")).strip()
+        confidence = float(block.get("confidence", 0.0))
+        # OCR often turns tiny icons into one noisy character.  Do not let those
+        # weak OCR fragments suppress visual/icon detection.
+        if confidence < 0.55 and len(text) <= 2:
+            continue
+        blocks.append(block)
+    return blocks
 
 
 def _write_layout_report(

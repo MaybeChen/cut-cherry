@@ -82,3 +82,41 @@ def test_layout_model_dependency_error_warning_mentions_paddlex_extra():
 
     assert warning["reason"] == "layout_model_missing_paddlex_extra"
     assert "paddlex[ocr]" in warning["remediation"]
+
+
+def test_merge_keeps_rule_icon_when_model_only_reports_overlapping_text() -> None:
+    from image2pptx.processors.layout_parser import _merge_model_and_rule_regions
+
+    model_regions = [
+        {
+            "id": "layout_model_0",
+            "kind": "paragraph",
+            "bbox": [10, 10, 50, 50],
+            "confidence": 0.7,
+        }
+    ]
+    rule_regions = [
+        {
+            "id": "icon_candidate_0",
+            "kind": "icon_candidate",
+            "bbox": [12, 12, 48, 48],
+            "confidence": 0.5,
+        }
+    ]
+
+    merged = _merge_model_and_rule_regions(model_regions, rule_regions)
+
+    assert [region["kind"] for region in merged] == ["paragraph", "icon_candidate"]
+
+
+def test_visual_suppression_ignores_weak_single_character_ocr() -> None:
+    from image2pptx.processors.layout_parser import _text_blocks_for_visual_suppression
+
+    blocks = [
+        {"id": "weak", "text": "o", "bbox": [10, 10, 30, 30], "confidence": 0.2},
+        {"id": "real", "text": "Label", "bbox": [40, 10, 90, 30], "confidence": 0.9},
+    ]
+
+    filtered = _text_blocks_for_visual_suppression(blocks)
+
+    assert [block["id"] for block in filtered] == ["real"]
