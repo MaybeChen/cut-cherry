@@ -40,6 +40,7 @@ optional = true
 [tool.poetry.group.ocr.dependencies]
 paddleocr = "*"
 paddlepaddle = "*"
+paddlex = {extras = ["ocr"], version = "*"}
 
 [tool.poetry.group.gpu]
 optional = true
