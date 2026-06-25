@@ -1,6 +1,8 @@
 from __future__ import annotations
 from pathlib import Path
 from pptx import Presentation
+from pptx.chart.data import CategoryChartData
+from pptx.enum.chart import XL_CHART_TYPE
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.util import Emu, Pt
 from pptx.dml.color import RGBColor
@@ -56,13 +58,14 @@ class PptxRenderer:
                 shp.fill.solid()
                 shp.fill.fore_color.rgb = _hex_to_rgb(e.style.fill_color)
                 shp.line.color.rgb = _hex_to_rgb(e.style.line_color)
-            elif e.type == ElementType.TEXT:
+            elif e.type in {ElementType.TEXT, ElementType.FORMULA}:
                 tb = slide.shapes.add_textbox(x, y, w, h)
                 p = tb.text_frame.paragraphs[0]
                 p.text = e.text or ""
                 p.font.size = Pt(e.style.font_size or max(8, e.bbox.height * 0.45))
                 p.font.bold = e.style.bold
                 p.font.italic = e.style.italic
+                p.font.name = e.style.font_family
                 p.font.color.rgb = _hex_to_rgb(e.style.font_color)
             elif e.type == ElementType.TABLE:
                 raw = e.provenance.raw
@@ -85,6 +88,12 @@ class PptxRenderer:
                         for paragraph in cell.text_frame.paragraphs:
                             paragraph.font.size = Pt(10)
                             paragraph.font.color.rgb = _hex_to_rgb(e.style.font_color)
+            elif e.type == ElementType.CHART:
+                raw = e.provenance.raw
+                chart_data = CategoryChartData()
+                chart_data.categories = raw.get("categories", [])
+                chart_data.add_series("Series 1", raw.get("values", []))
+                slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, x, y, w, h, chart_data)
             elif e.type == ElementType.CONNECTOR:
                 slide.shapes.add_connector(1, x, y, Emu(x + w), Emu(y + h))
             elif e.asset_path:

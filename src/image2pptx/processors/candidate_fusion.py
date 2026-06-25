@@ -19,6 +19,8 @@ class CandidateFusionProcessor:
         layout_regions = ctx.candidates.get("layout_regions", [])
         table_regions = [r for r in layout_regions if r.get("kind") == "table_candidate"]
         image_regions = [r for r in layout_regions if r.get("kind") == "image_candidate"]
+        formula_regions = ctx.candidates.get("formulas", [])
+        chart_regions = ctx.candidates.get("charts", [])
         # 简单背景使用原生纯色，避免整页原图伪背景。
         slide.elements.append(
             SlideElement(
@@ -63,8 +65,43 @@ class CandidateFusionProcessor:
                     asset_path=asset_path,
                 )
             )
+        for formula in formula_regions:
+            x1, y1, x2, y2 = formula["bbox"]
+            slide.elements.append(
+                SlideElement(
+                    id=formula["id"],
+                    type=ElementType.FORMULA,
+                    bbox=Rect(x=x1, y=y1, width=x2 - x1, height=y2 - y1),
+                    z_index=55,
+                    text=formula["text"],
+                    style=ElementStyle(
+                        font_family="Cambria Math", font_size=max(10, (y2 - y1) * 0.5)
+                    ),
+                    confidence=formula["confidence"],
+                    provenance=Provenance(source="formula_processor", raw=formula),
+                    editable_strategy=EditableStrategy.OFFICE_MATH,
+                )
+            )
+        for chart in chart_regions:
+            x1, y1, x2, y2 = chart["bbox"]
+            slide.elements.append(
+                SlideElement(
+                    id=chart["id"],
+                    type=ElementType.CHART,
+                    bbox=Rect(x=x1, y=y1, width=x2 - x1, height=y2 - y1),
+                    z_index=35,
+                    style=ElementStyle(fill_color="#ffffff", line_color="#666666"),
+                    confidence=chart["confidence"],
+                    provenance=Provenance(source="chart_processor", raw=chart),
+                    editable_strategy=EditableStrategy.NATIVE_CHART,
+                )
+            )
         for s in ctx.candidates.get("shapes", []):
-            if _is_covered_by_region(s["bbox"], table_regions + image_regions, min_ratio=0.85):
+            if _is_covered_by_region(
+                s["bbox"],
+                table_regions + image_regions + chart_regions,
+                min_ratio=0.85,
+            ):
                 continue
             x1, y1, x2, y2 = s["bbox"]
             slide.elements.append(
@@ -85,7 +122,7 @@ class CandidateFusionProcessor:
             )
         text_candidates = ctx.candidates.get("text_blocks") or ctx.candidates.get("text", [])
         for t in text_candidates:
-            if _is_covered_by_region(t["bbox"], table_regions, min_ratio=0.8):
+            if _is_covered_by_region(t["bbox"], table_regions + formula_regions, min_ratio=0.8):
                 continue
             x1, y1, x2, y2 = t["bbox"]
             font_size = None

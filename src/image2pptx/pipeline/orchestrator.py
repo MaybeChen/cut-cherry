@@ -8,6 +8,8 @@ from image2pptx.processors.preprocess import PreprocessProcessor
 from image2pptx.processors.text_processor import TextProcessor
 from image2pptx.processors.geometry_processor import GeometryProcessor
 from image2pptx.processors.layout_parser import LayoutParserProcessor
+from image2pptx.processors.formula_processor import FormulaProcessor
+from image2pptx.processors.chart_processor import ChartProcessor
 from image2pptx.processors.arrow_processor import ArrowProcessor
 from image2pptx.processors.candidate_fusion import CandidateFusionProcessor
 from image2pptx.renderers.pptx_renderer import PptxRenderer
@@ -44,6 +46,10 @@ class ImageToPptxPipeline:
             ArrowProcessor().run(ctx)
         if self.settings.pipeline.enable_layout:
             LayoutParserProcessor().run(ctx)
+        if self.settings.pipeline.enable_formula:
+            FormulaProcessor().run(ctx)
+        if self.settings.pipeline.enable_chart:
+            ChartProcessor().run(ctx)
         ir = CandidateFusionProcessor().run(ctx)
         ir_path = job_dir / "slide_ir.json"
         ir.export_json(ir_path)

@@ -49,6 +49,26 @@ def test_candidate_fusion_promotes_layout_regions_to_table_and_image(tmp_path):
                     "confidence": 0.6,
                 }
             ],
+            "formulas": [
+                {
+                    "id": "formula_0",
+                    "kind": "formula",
+                    "text": "E = mc^2",
+                    "bbox": [20, 80, 100, 110],
+                    "confidence": 0.8,
+                }
+            ],
+            "charts": [
+                {
+                    "id": "chart_0",
+                    "kind": "bar_chart",
+                    "bbox": [30, 120, 130, 190],
+                    "confidence": 0.7,
+                    "categories": ["1", "2", "3"],
+                    "values": [0.5, 1.0, 0.75],
+                    "source_ids": [],
+                }
+            ],
             "connectors": [],
         },
     )
@@ -58,6 +78,8 @@ def test_candidate_fusion_promotes_layout_regions_to_table_and_image(tmp_path):
 
     assert element_types["table_candidate_0"] == ElementType.TABLE
     assert element_types["image_candidate_0"] == ElementType.IMAGE
+    assert element_types["formula_0"] == ElementType.FORMULA
+    assert element_types["chart_0"] == ElementType.CHART
     assert "text_block_0" not in element_types
     assert "shape_0" not in element_types
     assert (tmp_path / "assets" / "image_candidate_0.png").exists()
