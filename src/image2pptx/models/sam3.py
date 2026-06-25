@@ -13,6 +13,7 @@ import importlib.util
 import io
 import json
 import sys
+import warnings
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -115,7 +116,7 @@ class Sam3Adapter:
 class _LocalSam3Runtime:
     def __init__(self, config: dict[str, Any], device: str) -> None:
         torch = importlib.import_module("torch")
-        builder = importlib.import_module("sam3.model_builder")
+        builder = _import_sam3_model_builder()
         processor_mod = importlib.import_module("sam3.model.sam3_image_processor")
         self.torch = torch
         self.config = config
@@ -233,6 +234,17 @@ def _normalize_kind(label: str) -> str:
     if "icon" in label or "symbol" in label:
         return "icon_candidate"
     return "image_candidate"
+
+
+def _import_sam3_model_builder() -> Any:
+    """Import SAM3's model builder without surfacing pkg_resources noise."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="pkg_resources is deprecated as an API.*",
+            category=UserWarning,
+        )
+        return importlib.import_module("sam3.model_builder")
 
 
 def _ensure_sam3_source_on_path(config: dict[str, Any]) -> Path | None:

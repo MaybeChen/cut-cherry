@@ -5,6 +5,7 @@
 #   SAM3_CLONE_URL="https://gitclone.com/github.com/facebookresearch/sam3.git" bash scripts/setup_sam3.sh
 #   SAM3_SRC="/opt/sam3_src" MODELS_DIR="/models" bash scripts/setup_sam3.sh
 #   NUMPY_SPEC="numpy>=1.26,<2" bash scripts/setup_sam3.sh
+#   SETUPTOOLS_SPEC="setuptools<81" bash scripts/setup_sam3.sh
 
 set -euo pipefail
 
@@ -19,6 +20,7 @@ NUMPY_SPEC="${NUMPY_SPEC:-numpy>=1.26,<2}"
 OPENCV_SPEC="${OPENCV_SPEC:-opencv-python<4.13}"
 SCIPY_SPEC="${SCIPY_SPEC:-scipy<1.18}"
 TIFFFILE_SPEC="${TIFFFILE_SPEC:-tifffile<2026}"
+SETUPTOOLS_SPEC="${SETUPTOOLS_SPEC:-setuptools<81}"
 BPE_NAME="bpe_simple_vocab_16e6.txt.gz"
 
 echo "[1/3] Cloning SAM3 source into $SAM3_SRC from $SAM3_CLONE_URL ..."
@@ -30,11 +32,11 @@ else
 fi
 
 echo "[2/4] Aligning NumPy/OpenCV/SciPy/tifffile compatibility ..."
-pip install --upgrade "$NUMPY_SPEC" "$OPENCV_SPEC" "$SCIPY_SPEC" "$TIFFFILE_SPEC"
+pip install --upgrade "$SETUPTOOLS_SPEC" "$NUMPY_SPEC" "$OPENCV_SPEC" "$SCIPY_SPEC" "$TIFFFILE_SPEC"
 
 echo "[3/4] Installing SAM3 package in editable mode ..."
 pip install -e "$SAM3_SRC"
-pip install --upgrade "$NUMPY_SPEC" "$OPENCV_SPEC" "$SCIPY_SPEC" "$TIFFFILE_SPEC"
+pip install --upgrade "$SETUPTOOLS_SPEC" "$NUMPY_SPEC" "$OPENCV_SPEC" "$SCIPY_SPEC" "$TIFFFILE_SPEC"
 pip check
 
 echo "[4/4] Copying BPE vocab into $MODELS_DIR ..."

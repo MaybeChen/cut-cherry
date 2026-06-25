@@ -213,10 +213,10 @@ bash scripts/setup_sam3.sh
 SAM3_CLONE_URL="https://gitclone.com/github.com/facebookresearch/sam3.git" bash scripts/setup_sam3.sh
 ```
 
-脚本会在安装 SAM3 前后执行兼容版本对齐：`numpy>=1.26,<2`、`opencv-python<4.13`、`scipy<1.18`、`tifffile<2026`，并运行 `pip check`。这组约束同时满足 `sam3 0.1.0` 的 `numpy<2,>=1.26` 与 `paddlex 3.7.1` 的 `numpy<2.4,>=1.24`，避免安装过程中被升级到 `numpy 2.5.0` 后产生依赖冲突。如果你的运行环境有更严格的制品库约束，可以用 `NUMPY_SPEC` 等变量覆盖：
+脚本会在安装 SAM3 前后执行兼容版本对齐：`setuptools<81`、`numpy>=1.26,<2`、`opencv-python<4.13`、`scipy<1.18`、`tifffile<2026`，并运行 `pip check`。这组约束同时满足 `sam3 0.1.0` 的 `numpy<2,>=1.26` 与 `paddlex 3.7.1` 的 `numpy<2.4,>=1.24`，避免安装过程中被升级到 `numpy 2.5.0` 后产生依赖冲突；`setuptools<81` 用于避免 SAM3 源码中 `pkg_resources` 导入在新版 setuptools 下反复打印弃用警告。如果你的运行环境有更严格的制品库约束，可以用 `NUMPY_SPEC` 等变量覆盖：
 
 ```bash
-NUMPY_SPEC="numpy>=1.26,<2" OPENCV_SPEC="opencv-python<4.13" bash scripts/setup_sam3.sh
+SETUPTOOLS_SPEC="setuptools<81" NUMPY_SPEC="numpy>=1.26,<2" OPENCV_SPEC="opencv-python<4.13" bash scripts/setup_sam3.sh
 ```
 
 当前默认配置按 CPU 运行（`models.sam3.device: cpu`）；CPU 可用于调试但速度较慢。如果后续切到 GPU，再把 `device` 或命令行 `--device` 改成 `cuda`。完成源码安装后，把 checkpoint 和 BPE 文件放到 `models/` 目录。示例目录：
