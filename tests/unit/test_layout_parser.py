@@ -1,0 +1,73 @@
+from types import SimpleNamespace
+
+from image2pptx.processors.layout_parser import LayoutParserProcessor, _merge_text_into_blocks
+
+
+def test_merge_text_items_preserves_separate_visual_lines():
+    blocks = _merge_text_into_blocks(
+        [
+            {"id": "text_0", "text": "Hello", "bbox": [10, 10, 50, 30], "confidence": 0.9},
+            {"id": "text_1", "text": "World", "bbox": [60, 11, 110, 31], "confidence": 0.8},
+            {"id": "text_2", "text": "Second line", "bbox": [10, 38, 120, 58], "confidence": 0.7},
+        ]
+    )
+
+    assert len(blocks) == 2
+    assert blocks[0]["text"] == "Hello World"
+    assert blocks[0]["bbox"] == [10.0, 10.0, 110.0, 31.0]
+    assert blocks[0]["source_ids"] == ["text_0", "text_1"]
+    assert blocks[1]["text"] == "Second line"
+
+
+def test_layout_parser_adds_text_blocks_and_table_candidate_for_real_grid():
+    ctx = SimpleNamespace(
+        candidates={
+            "text": [
+                {"id": "text_0", "text": "A", "bbox": [110, 110, 130, 125], "confidence": 0.9},
+                {"id": "text_1", "text": "B", "bbox": [170, 110, 190, 125], "confidence": 0.9},
+            ],
+            "lines": [
+                {"id": "h1", "points": [[100, 100], [220, 100]], "confidence": 0.6},
+                {"id": "h2", "points": [[100, 150], [220, 150]], "confidence": 0.6},
+                {"id": "h3", "points": [[100, 200], [220, 200]], "confidence": 0.6},
+                {"id": "v1", "points": [[100, 100], [100, 200]], "confidence": 0.6},
+                {"id": "v2", "points": [[160, 100], [160, 200]], "confidence": 0.6},
+                {"id": "v3", "points": [[220, 100], [220, 200]], "confidence": 0.6},
+            ],
+            "shapes": [],
+        }
+    )
+
+    LayoutParserProcessor().run(ctx)
+
+    assert [block["text"] for block in ctx.candidates["text_blocks"]] == ["A B"]
+    table = next(
+        region for region in ctx.candidates["layout_regions"] if region["kind"] == "table_candidate"
+    )
+    assert table["rows"] == 2
+    assert table["cols"] == 2
+    assert table["cells"][0][0]["text"] == "A"
+    assert table["cells"][0][1]["text"] == "B"
+
+
+def test_layout_parser_does_not_turn_simple_frame_into_table():
+    ctx = SimpleNamespace(
+        candidates={
+            "text": [
+                {"id": "text_0", "text": "Title", "bbox": [110, 110, 150, 125], "confidence": 0.9},
+            ],
+            "lines": [
+                {"id": "h1", "points": [[100, 100], [220, 100]], "confidence": 0.6},
+                {"id": "h2", "points": [[100, 150], [220, 150]], "confidence": 0.6},
+                {"id": "v1", "points": [[100, 100], [100, 150]], "confidence": 0.6},
+                {"id": "v2", "points": [[220, 100], [220, 150]], "confidence": 0.6},
+            ],
+            "shapes": [],
+        }
+    )
+
+    LayoutParserProcessor().run(ctx)
+
+    assert not any(
+        region["kind"] == "table_candidate" for region in ctx.candidates["layout_regions"]
+    )
