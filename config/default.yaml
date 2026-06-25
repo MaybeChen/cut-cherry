@@ -44,8 +44,22 @@ models:
     use_region_detection: true
   sam3:
     enabled: true
+    device: cpu
     endpoint: null
+    send_device: false
+    timeout: 30
+    sam3_src_path: sam3_src
+    source_path: null
     model_path: null
+    checkpoint_path: null
+    bpe_path: null
+    load_from_hf: false
+    prompts: [icon, logo, image, figure, diagram symbol]
+    score_threshold: 0.5
+    epsilon_factor: 0.02
+    min_area: 100
+    return_masks: false
+    mask_format: rle
   rmbg:
     enabled: true
     model_path: models/rmbg.onnx
