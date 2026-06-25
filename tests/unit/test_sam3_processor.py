@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from image2pptx.models.sam3 import normalize_sam3_result
+from image2pptx.models.sam3 import _ensure_sam3_source_on_path, normalize_sam3_result
 from image2pptx.processors.sam3_processor import Sam3Processor
 
 
@@ -92,3 +92,16 @@ def test_normalize_sam3_result_derives_bbox_from_polygon() -> None:
 
     assert regions[0]["bbox"] == [4.0, 3.0, 9.0, 8.0]
     assert regions[0]["kind"] == "image_candidate"
+
+
+def test_ensure_sam3_source_on_path_accepts_banana_sam3_src(tmp_path, monkeypatch) -> None:
+    sam3_src = tmp_path / "sam3_src"
+    (sam3_src / "sam3").mkdir(parents=True)
+    monkeypatch.syspath_prepend(str(tmp_path / "existing"))
+
+    resolved = _ensure_sam3_source_on_path({"sam3_src_path": str(sam3_src)})
+
+    assert resolved == sam3_src.resolve()
+    import sys
+
+    assert sys.path[0] == str(sam3_src.resolve())

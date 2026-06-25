@@ -199,9 +199,21 @@ models:
 
 > 如果你的服务端必须知道运行设备，可以额外加 `send_device: true`；默认不发送 `device`，以便尽量贴近 Edit-Banana 风格服务的输入 schema。
 
-#### 方式 B：本地 SAM3 runtime
+#### 方式 B：本地 SAM3 runtime（CPU 默认）
 
-如果希望本项目进程内直接加载 SAM3，需要在运行环境中安装 SAM3 及 PyTorch，并把 checkpoint 和可选 BPE 文件放到 `models/` 目录。示例目录：
+如果希望本项目进程内直接加载 SAM3，需要像 Edit-Banana 一样先下载 `sam3_src` 源码并以 editable 模式安装。本项目提供了同名流程脚本：
+
+```bash
+bash scripts/setup_sam3.sh
+```
+
+该脚本会把 `facebookresearch/sam3` 克隆到仓库根目录的 `sam3_src/`，执行 `pip install -e sam3_src`，并把 BPE 词表复制到 `models/`。如果当前机器无法直连 GitHub，可以改用镜像地址：
+
+```bash
+SAM3_CLONE_URL="https://gitclone.com/github.com/facebookresearch/sam3.git" bash scripts/setup_sam3.sh
+```
+
+当前默认配置按 CPU 运行（`models.sam3.device: cpu`）；CPU 可用于调试但速度较慢。如果后续切到 GPU，再把 `device` 或命令行 `--device` 改成 `cuda`。完成源码安装后，把 checkpoint 和 BPE 文件放到 `models/` 目录。示例目录：
 
 ```text
 models/
@@ -218,15 +230,19 @@ pipeline:
 models:
   sam3:
     enabled: true
+    device: cpu
+    sam3_src_path: sam3_src
     model_path: models/sam3/sam3.pt
+    checkpoint_path: models/sam3/sam3.pt
     bpe_path: models/sam3/bpe_simple_vocab_16e6.txt.gz
     prompts: [icon, logo, image, figure, diagram symbol]
     score_threshold: 0.5
+    epsilon_factor: 0.02
     min_area: 100
     return_masks: false
 ```
 
-本地模式会懒加载 `torch` 与 `sam3`，在配置了 `model_path` 且文件存在时才初始化模型；如果 `sam3` 未安装，会记录 `sam3_runtime_not_installed` warning 并继续后续流程。
+本地模式会懒加载 `torch` 与 `sam3`，在配置了 `model_path` / `checkpoint_path` 且文件存在时才初始化模型；如果 `sam3` 未安装但 `sam3_src_path` 指向的源码目录存在，会先把该目录加入 `sys.path` 再尝试导入；仍不可用时会记录 `sam3_runtime_not_installed` warning 并继续后续流程。
 
 ### 3. 运行 CLI 转换
 

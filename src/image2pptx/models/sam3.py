@@ -12,6 +12,7 @@ import importlib
 import importlib.util
 import io
 import json
+import sys
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -78,11 +79,16 @@ class Sam3Adapter:
         return normalize_sam3_result(raw), []
 
     def _infer_local(self, image_path: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        sam3_src_path = _ensure_sam3_source_on_path(self.config)
         if importlib.util.find_spec("sam3") is None:
             return [], [
                 {
                     "reason": "sam3_runtime_not_installed",
-                    "message": "Install the SAM3 runtime or configure models.sam3.endpoint.",
+                    "message": (
+                        "Run scripts/setup_sam3.sh to clone/install sam_src, or configure "
+                        "models.sam3.endpoint."
+                    ),
+                    "sam3_src_path": str(sam3_src_path) if sam3_src_path else None,
                 }
             ]
         try:
@@ -120,6 +126,7 @@ class _LocalSam3Runtime:
         results: list[dict[str, Any]] = []
         score_threshold = float(self.config.get("score_threshold", 0.5))
         min_area = int(self.config.get("min_area", 100))
+        epsilon_factor = float(self.config.get("epsilon_factor", 0.02))
         prompts = self.config.get("prompts", DEFAULT_PROMPTS)
         with _redirect_cuda_allocations_when_cpu_only(self.torch, self.device):
             state = self.processor.set_image(image)
@@ -132,7 +139,9 @@ class _LocalSam3Runtime:
                         prompt=str(prompt),
                         score_threshold=score_threshold,
                         min_area=min_area,
+                        epsilon_factor=epsilon_factor,
                         return_masks=bool(self.config.get("return_masks", False)),
+                        mask_format=str(self.config.get("mask_format", "rle")),
                     )
                 )
         return {"image_size": {"width": width, "height": height}, "results": results}
@@ -214,6 +223,21 @@ def _normalize_kind(label: str) -> str:
     return "image_candidate"
 
 
+def _ensure_sam3_source_on_path(config: dict[str, Any]) -> Path | None:
+    """Make a Banana-style local sam_src checkout importable before runtime checks."""
+    configured = config.get("sam3_src_path") or config.get("source_path")
+    candidates = [Path(str(configured))] if configured else []
+    candidates.extend([Path("sam3_src"), Path("sam_src")])
+    for candidate in candidates:
+        if (candidate / "sam3").is_dir():
+            resolved = candidate.resolve()
+            resolved_str = str(resolved)
+            if resolved_str not in sys.path:
+                sys.path.insert(0, resolved_str)
+            return resolved
+    return None
+
+
 def _resolve_device(torch: Any, requested: str | None) -> str:
     device = requested or "auto"
     if device == "auto":
@@ -274,7 +298,13 @@ def _install_cpu_dtype_compatibility_hooks(torch: Any, model: Any, device: str) 
 
 
 def _detections_from_state(
-    result_state: dict[str, Any], prompt: str, score_threshold: float, min_area: int, return_masks: bool
+    result_state: dict[str, Any],
+    prompt: str,
+    score_threshold: float,
+    min_area: int,
+    epsilon_factor: float,
+    return_masks: bool,
+    mask_format: str,
 ) -> list[dict[str, Any]]:
     detections: list[dict[str, Any]] = []
     masks = result_state.get("masks", [])
@@ -291,9 +321,12 @@ def _detections_from_state(
         if area < min_area:
             continue
         item: dict[str, Any] = {"prompt": prompt, "score": score, "bbox": bbox, "area": area}
+        binary_mask = (_to_numpy(masks[index]).squeeze() > 0.5).astype(np.uint8) * 255
+        polygon = _extract_polygon_from_mask(binary_mask, epsilon_factor)
+        if polygon:
+            item["polygon"] = polygon
         if return_masks:
-            mask = (_to_numpy(masks[index]).squeeze() > 0.5).astype(np.uint8) * 255
-            item["mask"] = {"data": _encode_mask_rle(mask), "format": "rle", "shape": list(mask.shape)}
+            item["mask"] = _encode_mask(binary_mask, mask_format)
         detections.append(item)
     return detections
 
@@ -324,6 +357,43 @@ def _encode_mask_rle(mask: np.ndarray) -> str:
             last_val = val
     runs.append(length)
     return ",".join(str(x) for x in runs)
+
+
+def _encode_mask(mask: np.ndarray, mask_format: str) -> dict[str, Any]:
+    if mask_format == "png":
+        return {"data": _encode_mask_png(mask), "format": "png", "shape": list(mask.shape)}
+    return {"data": _encode_mask_rle(mask), "format": "rle", "shape": list(mask.shape)}
+
+
+def _encode_mask_png(mask: np.ndarray) -> str:
+    buffer = io.BytesIO()
+    Image.fromarray(mask.astype(np.uint8)).save(buffer, format="PNG")
+    buffer.seek(0)
+    return base64.b64encode(buffer.read()).decode("ascii")
+
+
+def _extract_polygon_from_mask(binary_mask: np.ndarray, epsilon_factor: float) -> list[list[int]]:
+    if importlib.util.find_spec("cv2") is None:
+        return _bbox_polygon_from_mask(binary_mask)
+    cv2 = importlib.import_module("cv2")
+    contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if area <= 0:
+            continue
+        epsilon = epsilon_factor * cv2.arcLength(contour, True)
+        approx = cv2.approxPolyDP(contour, epsilon, True)
+        return [[int(x), int(y)] for x, y in approx.reshape(-1, 2).tolist()]
+    return _bbox_polygon_from_mask(binary_mask)
+
+
+def _bbox_polygon_from_mask(binary_mask: np.ndarray) -> list[list[int]]:
+    ys, xs = np.where(binary_mask > 0)
+    if len(xs) == 0 or len(ys) == 0:
+        return []
+    x1, x2 = int(xs.min()), int(xs.max())
+    y1, y2 = int(ys.min()), int(ys.max())
+    return [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
 
 
 def _decode_mask(mask: Any) -> dict[str, Any] | None:
