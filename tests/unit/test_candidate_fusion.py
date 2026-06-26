@@ -447,3 +447,89 @@ def test_candidate_fusion_skips_large_structural_image_container(tmp_path, capsy
     manifest = json.loads((tmp_path / "assets" / "image_assets.json").read_text())
     assert manifest["candidate_count"] == 1
     assert manifest["items"][0]["status"] == "skipped_structural_container"
+
+
+def test_candidate_fusion_skips_medium_container_with_internal_content(tmp_path):
+    normalized = tmp_path / "normalized.png"
+    Image.new("RGB", (1000, 600), "white").save(normalized)
+    text_blocks = [
+        {
+            "id": f"text_block_{idx}",
+            "kind": "paragraph",
+            "text": f"Capability {idx}",
+            "bbox": [250 + idx * 90, 260, 320 + idx * 90, 280],
+            "confidence": 0.95,
+        }
+        for idx in range(3)
+    ]
+    ctx = SimpleNamespace(
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        candidates={
+            "layout_regions": [
+                {
+                    "id": "middle_module_image",
+                    "kind": "image_candidate",
+                    "bbox": [180, 220, 820, 340],
+                    "confidence": 0.8,
+                    "source": "layout_model",
+                },
+                *text_blocks,
+            ],
+            "text_blocks": text_blocks,
+            "shapes": [],
+            "formulas": [],
+            "charts": [],
+            "connectors": [],
+            "sam3_regions": [],
+        },
+    )
+
+    slide = CandidateFusionProcessor().run(ctx)
+    element_ids = {element.id for element in slide.elements}
+
+    assert "middle_module_image" not in element_ids
+    assert "text_block_0" in element_ids
+    assert not (tmp_path / "assets" / "images" / "middle_module_image.png").exists()
+
+
+def test_candidate_fusion_filters_decorative_connectors_and_keeps_short_diagonal(tmp_path):
+    normalized = tmp_path / "normalized.png"
+    Image.new("RGB", (1000, 600), "white").save(normalized)
+    ctx = SimpleNamespace(
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        candidates={
+            "layout_regions": [],
+            "text_blocks": [
+                {
+                    "id": "text_block_0",
+                    "kind": "paragraph",
+                    "text": "Label",
+                    "bbox": [100, 100, 180, 120],
+                    "confidence": 0.9,
+                }
+            ],
+            "shapes": [
+                {
+                    "id": "shape_card",
+                    "kind": "roundRect",
+                    "bbox": [80, 80, 500, 160],
+                    "fill_color": "#ffffff",
+                    "line_color": "#b7cde2",
+                    "confidence": 0.7,
+                }
+            ],
+            "formulas": [],
+            "charts": [],
+            "connectors": [
+                {"id": "long_h", "points": [[80, 82], [500, 82]], "confidence": 0.6},
+                {"id": "short_diag", "points": [[200, 200], [220, 220]], "confidence": 0.6},
+            ],
+        },
+    )
+
+    slide = CandidateFusionProcessor().run(ctx)
+    connectors = [element for element in slide.elements if element.type == ElementType.CONNECTOR]
+
+    assert [connector.id for connector in connectors] == ["short_diag"]

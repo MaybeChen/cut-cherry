@@ -4,6 +4,7 @@ from pptx import Presentation
 from pptx.chart.data import CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE
 from pptx.enum.shapes import MSO_SHAPE
+from pptx.enum.text import PP_ALIGN
 from pptx.util import Emu, Pt
 from pptx.dml.color import RGBColor
 from image2pptx.ir.elements import ElementType
@@ -67,6 +68,10 @@ class PptxRenderer:
                 p.font.italic = e.style.italic
                 p.font.name = e.style.font_family
                 p.font.color.rgb = _hex_to_rgb(e.style.font_color)
+                if e.style.align == "center":
+                    p.alignment = PP_ALIGN.CENTER
+                elif e.style.align == "right":
+                    p.alignment = PP_ALIGN.RIGHT
             elif e.type == ElementType.TABLE:
                 raw = e.provenance.raw
                 rows = max(1, int(raw.get("rows") or len(raw.get("cells", [])) or 1))
