@@ -168,3 +168,28 @@ def test_rule_layout_includes_sam3_visual_regions_before_text() -> None:
     regions = _build_rule_layout_regions(ctx, text_blocks)
 
     assert [region["id"] for region in regions] == ["sam3_icon_0", "text_line_0"]
+
+
+def test_merge_keeps_small_sam3_visual_inside_large_model_image() -> None:
+    from image2pptx.processors.layout_parser import _merge_model_and_rule_regions
+
+    model_regions = [
+        {
+            "id": "layout_model_0",
+            "kind": "image_candidate",
+            "bbox": [0, 0, 500, 300],
+            "confidence": 0.8,
+        }
+    ]
+    rule_regions = [
+        {
+            "id": "sam3_icon_0",
+            "kind": "icon_candidate",
+            "bbox": [40, 40, 80, 80],
+            "confidence": 0.7,
+        }
+    ]
+
+    merged = _merge_model_and_rule_regions(model_regions, rule_regions)
+
+    assert [region["id"] for region in merged] == ["layout_model_0", "sam3_icon_0"]

@@ -388,3 +388,52 @@ def test_candidate_fusion_applies_polygon_alpha(tmp_path):
     assert asset.getpixel((15, 15))[3] == 255
     manifest = json.loads((tmp_path / "assets" / "image_assets.json").read_text())
     assert manifest["items"][0]["mask_source"] == "polygon"
+
+
+def test_candidate_fusion_skips_large_structural_image_container(tmp_path, capsys):
+    normalized = tmp_path / "normalized.png"
+    Image.new("RGB", (1000, 600), "white").save(normalized)
+    text_blocks = [
+        {
+            "id": f"text_block_{idx}",
+            "kind": "paragraph",
+            "text": f"Block {idx}",
+            "bbox": [100, 100 + idx * 30, 300, 120 + idx * 30],
+            "confidence": 0.95,
+        }
+        for idx in range(6)
+    ]
+    ctx = SimpleNamespace(
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        candidates={
+            "layout_regions": [
+                {
+                    "id": "layout_model_0",
+                    "kind": "image_candidate",
+                    "bbox": [40, 60, 960, 540],
+                    "confidence": 0.9,
+                    "source": "layout_model",
+                },
+                *text_blocks,
+            ],
+            "text_blocks": text_blocks,
+            "shapes": [],
+            "formulas": [],
+            "charts": [],
+            "connectors": [],
+            "sam3_regions": [],
+        },
+    )
+
+    slide = CandidateFusionProcessor().run(ctx)
+    element_types = {element.id: element.type for element in slide.elements}
+
+    assert "layout_model_0" not in element_types
+    assert element_types["text_block_0"] == ElementType.TEXT
+    assert not (tmp_path / "assets" / "images" / "layout_model_0.png").exists()
+    output = capsys.readouterr().out
+    assert "reason=structural_container" in output
+    manifest = json.loads((tmp_path / "assets" / "image_assets.json").read_text())
+    assert manifest["candidate_count"] == 1
+    assert manifest["items"][0]["status"] == "skipped_structural_container"

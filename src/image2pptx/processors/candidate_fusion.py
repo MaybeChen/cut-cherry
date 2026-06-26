@@ -31,6 +31,7 @@ class CandidateFusionProcessor:
             for r in layout_regions
             if r.get("kind") in {"image_candidate", "logo_candidate", "icon_candidate"}
         ]
+        asset_image_regions, structural_image_regions = _split_asset_image_regions(ctx, image_regions, im)
         formula_regions = ctx.candidates.get("formulas", [])
         chart_regions = ctx.candidates.get("charts", [])
         # 简单背景使用原生纯色，避免整页原图伪背景。
@@ -62,15 +63,25 @@ class CandidateFusionProcessor:
         asset_root = ctx.job_dir / "assets"
         asset_root.mkdir(parents=True, exist_ok=True)
         asset_manifest = _start_asset_manifest(ctx, asset_root, image_regions)
+        for structural_region in structural_image_regions:
+            _record_asset_manifest_item(
+                asset_manifest,
+                structural_region,
+                status="skipped_structural_container",
+            )
+            _print_asset_event(
+                "skip",
+                f"id={structural_region.get('id')} reason=structural_container bbox={structural_region.get('bbox')}",
+            )
         _print_asset_event(
             "start",
-            f"image/logo/icon candidates={len(image_regions)} output={asset_root}",
+            f"image/logo/icon candidates={len(asset_image_regions)} skipped_structural={len(structural_image_regions)} output={asset_root}",
         )
-        if not image_regions:
+        if not asset_image_regions:
             _print_asset_event(
                 "skip", "no image_candidate/logo_candidate/icon_candidate regions found"
             )
-        for image_region in image_regions:
+        for image_region in asset_image_regions:
             _print_asset_event(
                 "candidate",
                 f"id={image_region.get('id')} kind={image_region.get('kind')} bbox={image_region.get('bbox')}",
@@ -180,7 +191,7 @@ class CandidateFusionProcessor:
         for t in text_candidates:
             if _is_covered_by_region(t["bbox"], table_regions + formula_regions, min_ratio=0.8):
                 continue
-            if _is_covered_by_region(t["bbox"], image_regions, min_ratio=0.6):
+            if _is_covered_by_region(t["bbox"], asset_image_regions, min_ratio=0.6):
                 continue
             x1, y1, x2, y2 = t["bbox"]
             font_size = None
@@ -229,14 +240,77 @@ class CandidateFusionProcessor:
         return slide
 
 
+def _split_asset_image_regions(
+    ctx: PipelineContext, image_regions: list[dict], im: Image.Image
+) -> tuple[list[dict], list[dict]]:
+    asset_regions = []
+    structural_regions = []
+    for region in image_regions:
+        if _is_structural_container_image(region, ctx, im):
+            structural_regions.append(region)
+        else:
+            asset_regions.append(region)
+    return asset_regions, structural_regions
+
+
+def _is_structural_container_image(region: dict, ctx: PipelineContext, im: Image.Image) -> bool:
+    if region.get("kind") != "image_candidate":
+        return False
+    bbox = region.get("bbox", [])
+    if len(bbox) != 4:
+        return False
+    area_ratio = _bbox_area(bbox) / max(im.width * im.height, 1)
+    if area_ratio < 0.25:
+        return False
+    text_inside = sum(
+        1
+        for block in ctx.candidates.get("text_blocks", [])
+        if _overlap_ratio(block.get("bbox", []), bbox) >= 0.8
+    )
+    connector_inside = sum(
+        1
+        for connector in ctx.candidates.get("connectors", [])
+        if _connector_bbox_inside(connector, bbox)
+    )
+    sam3_inside = sum(
+        1
+        for sam_region in ctx.candidates.get("sam3_regions", [])
+        if _overlap_ratio(sam_region.get("bbox", []), bbox) >= 0.8
+    )
+    # A large region containing many OCR/connector/SAM3 sub-regions is a diagram
+    # container, not a bitmap asset.  Keeping it as an image suppresses editable
+    # text and makes the output look like a screenshot pasted into PPT.
+    return text_inside >= 6 or connector_inside >= 12 or sam3_inside >= 6
+
+
+def _connector_bbox_inside(connector: dict, bbox: list[float]) -> bool:
+    points = connector.get("points")
+    if not isinstance(points, list | tuple) or len(points) < 2:
+        return False
+    try:
+        (x1, y1), (x2, y2) = points[:2]
+    except (TypeError, ValueError):
+        return False
+    connector_bbox = [min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)]
+    return _overlap_ratio(connector_bbox, bbox) >= 0.8
+
+
+def _bbox_area(bbox: list[float]) -> float:
+    if len(bbox) != 4:
+        return 0.0
+    return max(0.0, bbox[2] - bbox[0]) * max(0.0, bbox[3] - bbox[1])
+
+
 def _is_covered_by_region(bbox: list[float], regions: list[dict], min_ratio: float) -> bool:
     return any(_overlap_ratio(bbox, region["bbox"]) >= min_ratio for region in regions)
 
 
 def _overlap_ratio(a: list[float], b: list[float]) -> float:
+    if len(a) != 4 or len(b) != 4:
+        return 0.0
     ix1, iy1, ix2, iy2 = max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])
     inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
-    area = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1])
+    area = _bbox_area(a)
     return inter / area if area else 0.0
 
 

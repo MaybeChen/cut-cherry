@@ -103,6 +103,14 @@ def _should_drop_rule_region(rule_region: dict, model_region: dict) -> bool:
         return False
     if _is_visual_region(rule_region) and not _is_visual_region(model_region):
         return False
+    if _is_visual_region(rule_region) and _is_visual_region(model_region):
+        # PP-Structure/PaddleOCR-VL may label a whole diagram/slide section as a
+        # single image.  Do not let that coarse container erase smaller SAM3/rule
+        # visual proposals that can become editable/native pieces later.
+        rule_area = _bbox_area(rule_region["bbox"])
+        model_area = _bbox_area(model_region["bbox"])
+        if rule_area > 0 and model_area >= rule_area * 4:
+            return False
     return True
 
 
@@ -669,5 +677,9 @@ def _average_confidence(items: list[dict]) -> float:
 def _overlap_ratio(a: list[float], b: list[float]) -> float:
     ix1, iy1, ix2, iy2 = max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])
     inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
-    area = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1])
+    area = _bbox_area(a)
     return inter / area if area else 0.0
+
+
+def _bbox_area(bbox: list[float]) -> float:
+    return max(0.0, bbox[2] - bbox[0]) * max(0.0, bbox[3] - bbox[1])
