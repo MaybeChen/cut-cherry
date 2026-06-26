@@ -271,24 +271,39 @@ def _missing_required_local_assets(config: dict[str, Any]) -> list[dict[str, Any
 
 
 def _missing_sam3_runtime_modules() -> list[dict[str, Any]]:
-    if importlib.util.find_spec("triton") is not None:
-        return []
-    if sys.platform.startswith("win"):
-        install_hint = "pip install triton-windows"
-    else:
-        install_hint = "pip install triton"
-    return [
-        {
-            "reason": "sam3_triton_missing",
-            "message": (
-                "SAM3 imports Triton during local runtime initialization, but the "
-                f"'triton' module is not installed. Install it with `{install_hint}` "
-                "or run SAM3 through an endpoint."
-            ),
-            "module": "triton",
-            "install_hint": install_hint,
-        }
-    ]
+    warnings_: list[dict[str, Any]] = []
+    if importlib.util.find_spec("triton") is None:
+        if sys.platform.startswith("win"):
+            install_hint = "pip install triton-windows"
+        else:
+            install_hint = "pip install triton"
+        warnings_.append(
+            {
+                "reason": "sam3_triton_missing",
+                "message": (
+                    "SAM3 imports Triton during local runtime initialization, but the "
+                    f"'triton' module is not installed. Install it with `{install_hint}` "
+                    "or run SAM3 through an endpoint."
+                ),
+                "module": "triton",
+                "install_hint": install_hint,
+            }
+        )
+    if importlib.util.find_spec("pycocotools") is None:
+        install_hint = "pip install pycocotools"
+        warnings_.append(
+            {
+                "reason": "sam3_pycocotools_missing",
+                "message": (
+                    "SAM3 imports pycocotools during local runtime initialization, but "
+                    f"the 'pycocotools' module is not installed. Install it with `{install_hint}` "
+                    "or run SAM3 through an endpoint."
+                ),
+                "module": "pycocotools",
+                "install_hint": install_hint,
+            }
+        )
+    return warnings_
 
 
 def _ensure_sam3_source_on_path(config: dict[str, Any]) -> Path | None:

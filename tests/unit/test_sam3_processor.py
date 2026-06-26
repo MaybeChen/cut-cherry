@@ -126,7 +126,7 @@ def test_sam3_adapter_reports_missing_configured_assets(tmp_path) -> None:
     assert warnings[0]["key"] == "model_path"
 
 
-def test_sam3_adapter_reports_missing_triton_before_runtime_init(tmp_path, monkeypatch) -> None:
+def test_sam3_adapter_reports_missing_runtime_modules_before_runtime_init(tmp_path, monkeypatch) -> None:
     image = tmp_path / "normalized.png"
     image.write_bytes(b"fake")
     model_path = tmp_path / "models" / "sam3.pt"
@@ -138,7 +138,7 @@ def test_sam3_adapter_reports_missing_triton_before_runtime_init(tmp_path, monke
     def fake_find_spec(name: str):
         if name == "sam3":
             return object()
-        if name == "triton":
+        if name in {"triton", "pycocotools"}:
             return None
         return object()
 
@@ -154,5 +154,8 @@ def test_sam3_adapter_reports_missing_triton_before_runtime_init(tmp_path, monke
     ).infer(image)
 
     assert regions == []
-    assert warnings[0]["reason"] == "sam3_triton_missing"
-    assert warnings[0]["module"] == "triton"
+    assert [warning["reason"] for warning in warnings] == [
+        "sam3_triton_missing",
+        "sam3_pycocotools_missing",
+    ]
+    assert [warning["module"] for warning in warnings] == ["triton", "pycocotools"]
