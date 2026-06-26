@@ -57,6 +57,15 @@ def _build_layout_model_error_warning(exc: BaseException) -> dict[str, str]:
                 '`poetry run pip install "paddlex[ocr]"`.'
             ),
         }
+    if "layout_chart_recognition_model_missing" in message or "chart_recognition_model" in message:
+        return {
+            "reason": "layout_chart_recognition_model_missing",
+            "message": message,
+            "remediation": (
+                "Set models.layout.use_chart_recognition=false, or regenerate the "
+                "PP-StructureV3/PaddleX YAML with chart recognition assets."
+            ),
+        }
     return {"reason": "layout_model_inference_failed", "message": message}
 
 

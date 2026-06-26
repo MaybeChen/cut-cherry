@@ -86,6 +86,17 @@ def test_layout_model_dependency_error_warning_mentions_paddlex_extra():
     assert "paddlex[ocr]" in warning["remediation"]
 
 
+def test_layout_model_chart_missing_warning_suggests_disabling_chart_recognition():
+    from image2pptx.processors.layout_parser import _build_layout_model_error_warning
+
+    warning = _build_layout_model_error_warning(
+        RuntimeError("layout_chart_recognition_model_missing: chart_recognition_model")
+    )
+
+    assert warning["reason"] == "layout_chart_recognition_model_missing"
+    assert "use_chart_recognition=false" in warning["remediation"]
+
+
 def test_merge_keeps_rule_icon_when_model_only_reports_overlapping_text() -> None:
     from image2pptx.processors.layout_parser import _merge_model_and_rule_regions
 

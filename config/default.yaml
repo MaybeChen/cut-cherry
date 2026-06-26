@@ -40,7 +40,7 @@ models:
     paddleocr_vl_model_dir: models/layout/paddleocr_vl
     use_table_recognition: true
     use_formula_recognition: true
-    use_chart_recognition: true
+    use_chart_recognition: false
     use_region_detection: true
   sam3:
     enabled: true

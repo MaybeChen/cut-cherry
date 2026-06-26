@@ -3,7 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from image2pptx.models import layout as layout_model
-from image2pptx.models.layout import LayoutModelAdapter, normalize_layout_result
+from image2pptx.models.layout import LayoutModelAdapter, _predict, normalize_layout_result
 from image2pptx.processors.layout_parser import LayoutParserProcessor
 
 
@@ -92,6 +92,23 @@ def test_layout_adapter_does_not_pass_layout_model_dir_with_paddlex_config(monke
     assert regions[0]["kind"] == "title"
     assert "layout_model_dir" not in calls[0]
     assert calls[0]["paddlex_config"] == str(config_path)
+
+
+def test_layout_predict_reports_missing_chart_model_when_enabled(tmp_path) -> None:
+    class FakePipeline:
+        def predict(self, input, **kwargs):
+            return []
+
+    image = tmp_path / "page.png"
+    image.write_bytes(b"fake")
+
+    try:
+        _predict(FakePipeline(), image, {"use_chart_recognition": True})
+    except RuntimeError as exc:
+        assert "layout_chart_recognition_model_missing" in str(exc)
+        assert "use_chart_recognition=false" in str(exc)
+    else:  # pragma: no cover - defensive assertion
+        raise AssertionError("Expected missing chart model to fail fast")
 
 
 def test_layout_parser_writes_model_report_and_merges_rules(tmp_path, monkeypatch):

@@ -127,12 +127,7 @@ def _build_common_kwargs(config: dict[str, Any], device: str) -> dict[str, Any]:
 
 
 def _predict(pipeline: Any, image_path: Path, config: dict[str, Any]) -> Any:
-    predict_kwargs = {
-        "use_table_recognition": bool(config.get("use_table_recognition", True)),
-        "use_formula_recognition": bool(config.get("use_formula_recognition", True)),
-        "use_chart_recognition": bool(config.get("use_chart_recognition", True)),
-        "use_region_detection": bool(config.get("use_region_detection", True)),
-    }
+    predict_kwargs = _build_predict_kwargs(pipeline, config)
     if hasattr(pipeline, "predict"):
         try:
             return pipeline.predict(input=str(image_path), **predict_kwargs)
@@ -141,6 +136,24 @@ def _predict(pipeline: Any, image_path: Path, config: dict[str, Any]) -> Any:
     if callable(pipeline):
         return pipeline(str(image_path))
     raise RuntimeError("layout pipeline does not provide predict() or __call__")
+
+
+def _build_predict_kwargs(pipeline: Any, config: dict[str, Any]) -> dict[str, bool]:
+    if bool(config.get("use_chart_recognition", False)) and not hasattr(
+        pipeline, "chart_recognition_model"
+    ):
+        raise RuntimeError(
+            "layout_chart_recognition_model_missing: models.layout.use_chart_recognition=true "
+            "but the loaded PP-Structure pipeline has no chart_recognition_model. "
+            "Set models.layout.use_chart_recognition=false or regenerate the PaddleX YAML "
+            "with chart recognition assets."
+        )
+    return {
+        "use_table_recognition": bool(config.get("use_table_recognition", True)),
+        "use_formula_recognition": bool(config.get("use_formula_recognition", True)),
+        "use_chart_recognition": bool(config.get("use_chart_recognition", False)),
+        "use_region_detection": bool(config.get("use_region_detection", True)),
+    }
 
 
 def normalize_layout_result(raw: Any) -> list[dict[str, Any]]:
