@@ -418,7 +418,16 @@ def test_candidate_fusion_skips_large_structural_image_container(tmp_path, capsy
                 *text_blocks,
             ],
             "text_blocks": text_blocks,
-            "shapes": [],
+            "shapes": [
+                {
+                    "id": "shape_card",
+                    "kind": "roundRect",
+                    "bbox": [80, 80, 920, 520],
+                    "fill_color": "#eef7ff",
+                    "line_color": "#b7cde2",
+                    "confidence": 0.72,
+                }
+            ],
             "formulas": [],
             "charts": [],
             "connectors": [],
@@ -430,6 +439,7 @@ def test_candidate_fusion_skips_large_structural_image_container(tmp_path, capsy
     element_types = {element.id: element.type for element in slide.elements}
 
     assert "layout_model_0" not in element_types
+    assert element_types["shape_card"] == ElementType.SHAPE
     assert element_types["text_block_0"] == ElementType.TEXT
     assert not (tmp_path / "assets" / "images" / "layout_model_0.png").exists()
     output = capsys.readouterr().out

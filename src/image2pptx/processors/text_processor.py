@@ -76,7 +76,7 @@ class TextProcessor:
             _write_ocr_report(ctx, status="failed", warnings=ctx.candidates["text_warnings"])
             raise PipelineStageError(format_stage_failure("text", ctx.candidates["text_warnings"]))
 
-        ctx.candidates["text"] = _normalize_ocr_result(result)
+        ctx.candidates["text"] = _filter_ocr_noise(_normalize_ocr_result(result))
         if ocr_warnings:
             ctx.candidates["text_warnings"] = ocr_warnings
         _write_ocr_report(
@@ -344,6 +344,32 @@ def _normalize_v3_result(result: Any) -> list[dict[str, Any]]:
     for i, (text, score, poly) in enumerate(rows):
         blocks.append(_make_text_block(i, text, score, poly))
     return blocks
+
+
+def _filter_ocr_noise(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    filtered = []
+    for block in blocks:
+        text = str(block.get("text", "")).strip()
+        confidence = float(block.get("confidence", 0.0))
+        if _is_noisy_ocr_text(text, confidence):
+            continue
+        block = dict(block)
+        block["id"] = f"text_{len(filtered)}"
+        filtered.append(block)
+    return filtered
+
+
+def _is_noisy_ocr_text(text: str, confidence: float) -> bool:
+    compact = "".join(text.split())
+    if not compact:
+        return True
+    if len(compact) == 1:
+        return True
+    if len(compact) <= 3 and confidence < 0.78:
+        return True
+    if confidence < 0.45:
+        return True
+    return False
 
 
 def _make_text_block(i: int, text: str, conf: float, pts: Any) -> dict[str, Any]:

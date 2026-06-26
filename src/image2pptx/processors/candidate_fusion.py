@@ -166,7 +166,7 @@ class CandidateFusionProcessor:
         for s in ctx.candidates.get("shapes", []):
             if _is_covered_by_region(
                 s["bbox"],
-                table_regions + image_regions + chart_regions,
+                table_regions + asset_image_regions + chart_regions,
                 min_ratio=0.85,
             ):
                 continue
@@ -179,7 +179,7 @@ class CandidateFusionProcessor:
                     z_index=10,
                     style=ElementStyle(
                         fill_color=s.get("fill_color"),
-                        line_color="#666666",
+                        line_color=s.get("line_color", "#666666"),
                         shape_type=s.get("kind"),
                     ),
                     confidence=s["confidence"],
