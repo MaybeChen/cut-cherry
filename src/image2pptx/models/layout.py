@@ -114,9 +114,13 @@ def _build_common_kwargs(config: dict[str, Any], device: str) -> dict[str, Any]:
     kwargs: dict[str, Any] = {}
     if config.get("paddlex_config"):
         kwargs["paddlex_config"] = str(config["paddlex_config"])
-    if config.get("model_dir"):
+    # PaddleOCR 3.x PPStructureV3 accepts a PaddleX pipeline YAML via
+    # paddlex_config.  Passing legacy model-dir kwargs together with that YAML
+    # raises errors such as "Unknown argument: layout_model_dir"; the model
+    # paths should be expressed inside the exported YAML instead.
+    elif config.get("model_dir"):
         kwargs["model_dir"] = str(config["model_dir"])
-    if config.get("layout_model_dir"):
+    if not config.get("paddlex_config") and config.get("layout_model_dir"):
         kwargs["layout_model_dir"] = str(config["layout_model_dir"])
     kwargs["device"] = "gpu" if device == "cuda" else "cpu"
     return kwargs
@@ -146,17 +150,23 @@ def normalize_layout_result(raw: Any) -> list[dict[str, Any]]:
         if bbox is None:
             continue
         label = _extract_label(item)
-        regions.append(
-            {
-                "id": f"layout_model_{len(regions)}",
-                "kind": _normalize_kind(label),
-                "bbox": bbox,
-                "confidence": float(item.get("score", item.get("confidence", 0.7)) or 0.7),
-                "text": item.get("text") or item.get("content") or item.get("html"),
-                "source": "layout_model",
-                "raw": item,
-            }
-        )
+        region = {
+            "id": f"layout_model_{len(regions)}",
+            "kind": _normalize_kind(label),
+            "label": label,
+            "bbox": bbox,
+            "confidence": _extract_confidence(item),
+            "text": _extract_text(item),
+            "source": "layout_model",
+            "raw": item,
+        }
+        polygon = _extract_polygon(item)
+        if polygon:
+            region["polygon"] = polygon
+        source_id = item.get("id") or item.get("region_id") or item.get("block_id")
+        if source_id is not None:
+            region["source_ids"] = [str(source_id)]
+        regions.append(region)
     return regions
 
 
@@ -173,11 +183,33 @@ def _iter_dicts(value: Any):
 
 
 def _extract_bbox(item: dict[str, Any]) -> list[float] | None:
-    for key in ("bbox", "block_bbox", "coordinate", "box"):
+    for key in (
+        "bbox",
+        "block_bbox",
+        "layout_bbox",
+        "det_box",
+        "coordinate",
+        "box",
+        "poly",
+        "polygon",
+        "points",
+        "dt_polys",
+        "quadrilateral",
+    ):
         value = item.get(key)
         bbox = _coerce_bbox(value)
         if bbox is not None:
             return bbox
+    return None
+
+
+def _extract_polygon(item: dict[str, Any]) -> list[list[float]] | None:
+    for key in ("polygon", "poly", "points", "dt_polys", "coordinate", "quadrilateral"):
+        value = item.get(key)
+        if isinstance(value, list | tuple) and all(
+            isinstance(point, list | tuple) and len(point) >= 2 for point in value
+        ):
+            return [[float(point[0]), float(point[1])] for point in value]
     return None
 
 
@@ -195,26 +227,51 @@ def _coerce_bbox(value: Any) -> list[float] | None:
 
 
 def _extract_label(item: dict[str, Any]) -> str:
-    for key in ("label", "type", "block_label", "layout_label", "category"):
+    for key in (
+        "label",
+        "type",
+        "block_label",
+        "layout_label",
+        "layout_type",
+        "block_type",
+        "sub_label",
+        "category",
+        "category_name",
+        "name",
+    ):
         if item.get(key):
             return str(item[key])
     return "text"
 
 
+def _extract_confidence(item: dict[str, Any]) -> float:
+    for key in ("score", "confidence", "det_score", "layout_score", "prob"):
+        if item.get(key) is not None:
+            return float(item.get(key) or 0.7)
+    return 0.7
+
+
+def _extract_text(item: dict[str, Any]) -> Any:
+    for key in ("text", "content", "html", "table_html", "pred_html", "latex", "markdown"):
+        if item.get(key):
+            return item[key]
+    return None
+
+
 def _normalize_kind(label: str) -> str:
-    label = label.lower()
-    if "table" in label:
+    label = label.lower().replace("_", " ").replace("-", " ")
+    if "table" in label or "表格" in label:
         return "table_candidate"
-    if "logo" in label:
+    if "logo" in label or "标志" in label:
         return "logo_candidate"
-    if "icon" in label:
+    if "icon" in label or "图标" in label:
         return "icon_candidate"
-    if "image" in label or "figure" in label or "pic" in label:
+    if any(token in label for token in ("image", "figure", "picture", "photo", "pic", "图片", "插图")):
         return "image_candidate"
-    if "title" in label:
+    if "title" in label or "标题" in label:
         return "title"
-    if "formula" in label or "equation" in label:
+    if "formula" in label or "equation" in label or "公式" in label:
         return "formula"
-    if "chart" in label:
+    if "chart" in label or "图表" in label:
         return "chart"
     return "paragraph"

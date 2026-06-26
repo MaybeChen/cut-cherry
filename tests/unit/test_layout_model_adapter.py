@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -56,7 +57,44 @@ def test_layout_adapter_uses_ppstructurev3_predict(monkeypatch, tmp_path):
     assert regions[0]["text"] == "Title"
 
 
-def test_layout_parser_writes_model_report_and_merges_fallback(tmp_path, monkeypatch):
+def test_layout_adapter_does_not_pass_layout_model_dir_with_paddlex_config(monkeypatch, tmp_path):
+    calls = []
+
+    class FakePPStructureV3:
+        def __init__(self, **kwargs):
+            calls.append(kwargs)
+            if "layout_model_dir" in kwargs:
+                raise ValueError("Unknown argument: layout_model_dir")
+
+        def predict(self, input, **kwargs):
+            return [{"label": "title", "bbox": [10, 10, 80, 30], "score": 0.88}]
+
+    fake_module = SimpleNamespace(PPStructureV3=FakePPStructureV3)
+    monkeypatch.setattr(layout_model.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(layout_model.importlib, "import_module", lambda name: fake_module)
+    config_path = tmp_path / "PP-StructureV3.yaml"
+    config_path.write_text("pipeline: PP-StructureV3\n", encoding="utf-8")
+    image = tmp_path / "page.png"
+    image.write_bytes(b"fake")
+
+    adapter = LayoutModelAdapter(
+        {
+            "engine": "pp_structure_v3",
+            "allow_auto_download": False,
+            "paddlex_config": str(config_path),
+            "layout_model_dir": str(tmp_path / "legacy_layout_model_dir"),
+        },
+        "cpu",
+    )
+    regions, warnings = adapter.infer(image)
+
+    assert warnings == []
+    assert regions[0]["kind"] == "title"
+    assert "layout_model_dir" not in calls[0]
+    assert calls[0]["paddlex_config"] == str(config_path)
+
+
+def test_layout_parser_writes_model_report_and_merges_rules(tmp_path, monkeypatch):
     normalized = tmp_path / "normalized.png"
     normalized.write_bytes(b"fake")
 
@@ -92,6 +130,8 @@ def test_layout_parser_writes_model_report_and_merges_fallback(tmp_path, monkeyp
     assert ctx.candidates["layout_regions"][0]["text"] == "Model title"
     assert (tmp_path / "layout_results.json").exists()
     assert ctx.artifacts["layout_results"] == tmp_path / "layout_results.json"
+    report = json.loads((tmp_path / "layout_results.json").read_text(encoding="utf-8"))
+    assert report["kind_counts"] == {"title": 1, "text_line": 1}
 
 
 def test_paddleocr_vl_uses_local_paddlex_config(monkeypatch, tmp_path):
@@ -182,3 +222,34 @@ def test_normalize_layout_result_maps_icon_and_logo_labels() -> None:
 
     assert regions[0]["kind"] == "icon_candidate"
     assert regions[1]["kind"] == "logo_candidate"
+
+
+def test_normalize_layout_result_accepts_paddlex_nested_region_schema() -> None:
+    regions = normalize_layout_result(
+        {
+            "page": {
+                "parsing_res_list": [
+                    {
+                        "block_label": "图片",
+                        "layout_bbox": [100, 80, 260, 200],
+                        "layout_score": 0.83,
+                        "region_id": "figure_a",
+                    },
+                    {
+                        "layout_type": "标题",
+                        "poly": [[20, 10], [180, 10], [180, 42], [20, 42]],
+                        "det_score": 0.91,
+                        "content": "Quarterly Report",
+                    },
+                ]
+            }
+        }
+    )
+
+    assert regions[0]["kind"] == "image_candidate"
+    assert regions[0]["source_ids"] == ["figure_a"]
+    assert regions[0]["confidence"] == 0.83
+    assert regions[1]["kind"] == "title"
+    assert regions[1]["bbox"] == [20.0, 10.0, 180.0, 42.0]
+    assert regions[1]["polygon"] == [[20.0, 10.0], [180.0, 10.0], [180.0, 42.0], [20.0, 42.0]]
+    assert regions[1]["text"] == "Quarterly Report"
