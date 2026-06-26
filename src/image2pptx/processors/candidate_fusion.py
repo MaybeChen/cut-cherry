@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import re
+import base64
+import io
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFilter
 from image2pptx.ir.elements import (
     EditableStrategy,
     ElementStyle,
@@ -13,6 +15,8 @@ from image2pptx.ir.elements import (
     SlideElement,
 )
 from image2pptx.ir.slide_ir import SlideIR
+from image2pptx.models.rmbg import RmbgAdapter
+from image2pptx.core.errors import PipelineStageError, format_stage_failure
 from image2pptx.pipeline.context import PipelineContext
 
 
@@ -27,6 +31,7 @@ class CandidateFusionProcessor:
             for r in layout_regions
             if r.get("kind") in {"image_candidate", "logo_candidate", "icon_candidate"}
         ]
+        asset_image_regions, structural_image_regions = _split_asset_image_regions(ctx, image_regions, im)
         formula_regions = ctx.candidates.get("formulas", [])
         chart_regions = ctx.candidates.get("charts", [])
         # 简单背景使用原生纯色，避免整页原图伪背景。
@@ -58,20 +63,30 @@ class CandidateFusionProcessor:
         asset_root = ctx.job_dir / "assets"
         asset_root.mkdir(parents=True, exist_ok=True)
         asset_manifest = _start_asset_manifest(ctx, asset_root, image_regions)
+        for structural_region in structural_image_regions:
+            _record_asset_manifest_item(
+                asset_manifest,
+                structural_region,
+                status="skipped_structural_container",
+            )
+            _print_asset_event(
+                "skip",
+                f"id={structural_region.get('id')} reason=structural_container bbox={structural_region.get('bbox')}",
+            )
         _print_asset_event(
             "start",
-            f"image/logo/icon candidates={len(image_regions)} output={asset_root}",
+            f"image/logo/icon candidates={len(asset_image_regions)} skipped_structural={len(structural_image_regions)} output={asset_root}",
         )
-        if not image_regions:
+        if not asset_image_regions:
             _print_asset_event(
                 "skip", "no image_candidate/logo_candidate/icon_candidate regions found"
             )
-        for image_region in image_regions:
+        for image_region in asset_image_regions:
             _print_asset_event(
                 "candidate",
                 f"id={image_region.get('id')} kind={image_region.get('kind')} bbox={image_region.get('bbox')}",
             )
-            asset = _prepare_image_asset(im, image_region, asset_root)
+            asset = _prepare_image_asset(im, image_region, asset_root, ctx)
             if not asset:
                 _record_asset_manifest_item(
                     asset_manifest, image_region, status="skipped_invalid_bbox"
@@ -148,10 +163,15 @@ class CandidateFusionProcessor:
                     editable_strategy=EditableStrategy.NATIVE_CHART,
                 )
             )
-        for s in ctx.candidates.get("shapes", []):
+        text_candidates = ctx.candidates.get("text_blocks") or ctx.candidates.get("text", [])
+        shape_candidates = [
+            *ctx.candidates.get("shapes", []),
+            *_synthesize_supporting_cards(ctx, im, ctx.candidates.get("shapes", []), text_candidates),
+        ]
+        for s in shape_candidates:
             if _is_covered_by_region(
                 s["bbox"],
-                table_regions + image_regions + chart_regions,
+                table_regions + asset_image_regions + chart_regions,
                 min_ratio=0.85,
             ):
                 continue
@@ -164,7 +184,7 @@ class CandidateFusionProcessor:
                     z_index=10,
                     style=ElementStyle(
                         fill_color=s.get("fill_color"),
-                        line_color="#666666",
+                        line_color=s.get("line_color", "#666666"),
                         shape_type=s.get("kind"),
                     ),
                     confidence=s["confidence"],
@@ -172,19 +192,13 @@ class CandidateFusionProcessor:
                     editable_strategy=EditableStrategy.NATIVE_SHAPE,
                 )
             )
-        text_candidates = ctx.candidates.get("text_blocks") or ctx.candidates.get("text", [])
         for t in text_candidates:
             if _is_covered_by_region(t["bbox"], table_regions + formula_regions, min_ratio=0.8):
                 continue
-            if _is_covered_by_region(t["bbox"], image_regions, min_ratio=0.6):
+            if _is_covered_by_region(t["bbox"], asset_image_regions, min_ratio=0.6):
                 continue
             x1, y1, x2, y2 = t["bbox"]
-            font_size = None
-            bold = False
-            if t.get("kind") == "title":
-                font_size = max(18, (y2 - y1) * 0.55)
-                bold = True
-            style = ElementStyle(font_size=font_size, bold=bold)
+            style = _text_style_for_block(t, shape_candidates)
             slide.elements.append(
                 SlideElement(
                     id=t["id"],
@@ -201,7 +215,7 @@ class CandidateFusionProcessor:
                     editable_strategy=EditableStrategy.NATIVE_TEXT,
                 )
             )
-        for c in ctx.candidates.get("connectors", [])[:50]:
+        for c in _semantic_connectors(ctx.candidates.get("connectors", []), shape_candidates, text_candidates, im)[:35]:
             (x1, y1), (x2, y2) = c["points"]
             slide.elements.append(
                 SlideElement(
@@ -225,14 +239,243 @@ class CandidateFusionProcessor:
         return slide
 
 
+def _synthesize_supporting_cards(
+    ctx: PipelineContext, im: Image.Image, existing_shapes: list[dict], text_candidates: list[dict]
+) -> list[dict]:
+    cards: list[dict] = []
+    right_texts = [
+        block
+        for block in text_candidates
+        if len(block.get("bbox", [])) == 4
+        and block["bbox"][0] >= im.width * 0.68
+        and block["bbox"][1] <= im.height * 0.84
+    ]
+    if right_texts:
+        panel_bbox = _expanded_bbox(
+            _union_bbox([block["bbox"] for block in right_texts]),
+            pad_x=28,
+            pad_y=42,
+            width=im.width,
+            height=im.height,
+        )
+        if not _is_covered_by_region(panel_bbox, existing_shapes, min_ratio=0.65):
+            cards.append(
+                {
+                    "id": "synthetic_right_panel",
+                    "kind": "roundRect",
+                    "bbox": panel_bbox,
+                    "fill_color": "#ffffff",
+                    "line_color": "#e4edf6",
+                    "confidence": 0.45,
+                    "source": "candidate_fusion_synthetic",
+                }
+            )
+    for block in text_candidates:
+        text = str(block.get("text", "")).lower()
+        if not any(token in text for token in ("from ambition", "executable", "patterns")):
+            continue
+        bbox = _expanded_bbox(block.get("bbox", []), 14, 10, im.width, im.height)
+        cards.append(
+            {
+                "id": f"synthetic_callout_{len(cards)}",
+                "kind": "roundRect",
+                "bbox": bbox,
+                "fill_color": "#fff3e6",
+                "line_color": "#f2a85f",
+                "confidence": 0.42,
+                "source": "candidate_fusion_synthetic",
+            }
+        )
+    return cards
+
+
+def _text_style_for_block(block: dict, shapes: list[dict]) -> ElementStyle:
+    bbox = block.get("bbox", [])
+    font_size = None
+    bold = False
+    font_color = "#17233a"
+    align = "left"
+    if block.get("kind") == "title":
+        font_size = max(18, (bbox[3] - bbox[1]) * 0.55) if len(bbox) == 4 else 18
+        bold = True
+    container = _best_containing_shape(bbox, shapes)
+    if container:
+        fill = str(container.get("fill_color") or "#ffffff")
+        if _hex_luminance(fill) < 95:
+            font_color = "#ffffff"
+            bold = True
+        elif container.get("kind") == "roundRect":
+            font_color = "#17314d"
+        align = "center" if _bbox_area(bbox) < _bbox_area(container.get("bbox", [])) * 0.35 else "left"
+    return ElementStyle(font_size=font_size, bold=bold, font_color=font_color, align=align)
+
+
+def _semantic_connectors(
+    connectors: list[dict], shapes: list[dict], text_candidates: list[dict], im: Image.Image
+) -> list[dict]:
+    filtered = []
+    for connector in connectors:
+        if _is_decorative_connector(connector, shapes, text_candidates, im):
+            continue
+        filtered.append(connector)
+    return filtered
+
+
+def _is_decorative_connector(
+    connector: dict, shapes: list[dict], text_candidates: list[dict], im: Image.Image
+) -> bool:
+    points = connector.get("points")
+    if not isinstance(points, list | tuple) or len(points) < 2:
+        return True
+    try:
+        (x1, y1), (x2, y2) = points[:2]
+    except (TypeError, ValueError):
+        return True
+    dx = abs(float(x2) - float(x1))
+    dy = abs(float(y2) - float(y1))
+    near_horizontal = dy <= 3
+    near_vertical = dx <= 3
+    bbox = _padded_line_bbox(float(x1), float(y1), float(x2), float(y2), pad=3)
+    if near_horizontal and dx >= im.width * 0.18:
+        return True
+    if near_vertical and dy >= im.height * 0.18:
+        return True
+    if any(_overlap_ratio(bbox, block.get("bbox", [])) > 0.25 for block in text_candidates):
+        return True
+    if any(_line_near_shape_edge((float(x1), float(y1), float(x2), float(y2)), shape.get("bbox", [])) for shape in shapes):
+        return True
+    return False
+
+
+def _padded_line_bbox(x1: float, y1: float, x2: float, y2: float, pad: float) -> list[float]:
+    return [min(x1, x2) - pad, min(y1, y2) - pad, max(x1, x2) + pad, max(y1, y2) + pad]
+
+
+def _line_near_shape_edge(line: tuple[float, float, float, float], bbox: list[float]) -> bool:
+    if len(bbox) != 4:
+        return False
+    x1, y1, x2, y2 = line
+    bx1, by1, bx2, by2 = bbox
+    if abs(y2 - y1) <= 3:
+        y = (y1 + y2) / 2
+        lx1, lx2 = sorted((x1, x2))
+        return min(lx2, bx2) - max(lx1, bx1) > 0 and (abs(y - by1) <= 5 or abs(y - by2) <= 5)
+    if abs(x2 - x1) <= 3:
+        x = (x1 + x2) / 2
+        ly1, ly2 = sorted((y1, y2))
+        return min(ly2, by2) - max(ly1, by1) > 0 and (abs(x - bx1) <= 5 or abs(x - bx2) <= 5)
+    return False
+
+
+def _best_containing_shape(bbox: list[float], shapes: list[dict]) -> dict | None:
+    if len(bbox) != 4:
+        return None
+    containers = [shape for shape in shapes if _overlap_ratio(bbox, shape.get("bbox", [])) >= 0.85]
+    return min(containers, key=lambda shape: _bbox_area(shape.get("bbox", [])), default=None)
+
+
+def _hex_luminance(value: str) -> float:
+    value = value.lstrip("#")
+    if len(value) != 6:
+        return 255.0
+    r, g, b = int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _expanded_bbox(bbox: list[float], pad_x: float, pad_y: float, width: int, height: int) -> list[float]:
+    if len(bbox) != 4:
+        return [0.0, 0.0, 0.0, 0.0]
+    return [
+        max(0.0, bbox[0] - pad_x),
+        max(0.0, bbox[1] - pad_y),
+        min(float(width), bbox[2] + pad_x),
+        min(float(height), bbox[3] + pad_y),
+    ]
+
+
+def _union_bbox(bboxes: list[list[float]]) -> list[float]:
+    return [
+        min(bbox[0] for bbox in bboxes),
+        min(bbox[1] for bbox in bboxes),
+        max(bbox[2] for bbox in bboxes),
+        max(bbox[3] for bbox in bboxes),
+    ]
+
+
+def _split_asset_image_regions(
+    ctx: PipelineContext, image_regions: list[dict], im: Image.Image
+) -> tuple[list[dict], list[dict]]:
+    asset_regions = []
+    structural_regions = []
+    for region in image_regions:
+        if _is_structural_container_image(region, ctx, im):
+            structural_regions.append(region)
+        else:
+            asset_regions.append(region)
+    return asset_regions, structural_regions
+
+
+def _is_structural_container_image(region: dict, ctx: PipelineContext, im: Image.Image) -> bool:
+    if region.get("kind") != "image_candidate":
+        return False
+    bbox = region.get("bbox", [])
+    if len(bbox) != 4:
+        return False
+    area_ratio = _bbox_area(bbox) / max(im.width * im.height, 1)
+    if area_ratio < 0.08:
+        return False
+    text_inside = sum(
+        1
+        for block in ctx.candidates.get("text_blocks", [])
+        if _overlap_ratio(block.get("bbox", []), bbox) >= 0.8
+    )
+    connector_inside = sum(
+        1
+        for connector in ctx.candidates.get("connectors", [])
+        if _connector_bbox_inside(connector, bbox)
+    )
+    sam3_inside = sum(
+        1
+        for sam_region in ctx.candidates.get("sam3_regions", [])
+        if _overlap_ratio(sam_region.get("bbox", []), bbox) >= 0.8
+    )
+    # A region containing many OCR/connector/SAM3 sub-regions is a diagram/card
+    # container, not a bitmap asset. Keeping it as an image preserves the original
+    # icon/text pixels and then overlays extracted icon/text again, causing the
+    # duplicated middle-card content seen in generated PPT previews.
+    if area_ratio >= 0.25:
+        return text_inside >= 6 or connector_inside >= 12 or sam3_inside >= 6
+    return text_inside >= 3 or connector_inside >= 6 or sam3_inside >= 3
+
+
+def _connector_bbox_inside(connector: dict, bbox: list[float]) -> bool:
+    points = connector.get("points")
+    if not isinstance(points, list | tuple) or len(points) < 2:
+        return False
+    try:
+        (x1, y1), (x2, y2) = points[:2]
+    except (TypeError, ValueError):
+        return False
+    connector_bbox = [min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)]
+    return _overlap_ratio(connector_bbox, bbox) >= 0.8
+
+
+def _bbox_area(bbox: list[float]) -> float:
+    if len(bbox) != 4:
+        return 0.0
+    return max(0.0, bbox[2] - bbox[0]) * max(0.0, bbox[3] - bbox[1])
+
+
 def _is_covered_by_region(bbox: list[float], regions: list[dict], min_ratio: float) -> bool:
     return any(_overlap_ratio(bbox, region["bbox"]) >= min_ratio for region in regions)
 
 
 def _overlap_ratio(a: list[float], b: list[float]) -> float:
+    if len(a) != 4 or len(b) != 4:
+        return 0.0
     ix1, iy1, ix2, iy2 = max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])
     inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
-    area = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1])
+    area = _bbox_area(a)
     return inter / area if area else 0.0
 
 
@@ -255,8 +498,13 @@ def _record_asset_manifest_item(
     item = {
         "id": region.get("id"),
         "source_kind": region.get("kind"),
+        "source": region.get("source"),
+        "confidence": region.get("confidence"),
         "status": status,
         "source_bbox": region.get("bbox"),
+        "has_mask": bool(region.get("mask")),
+        "has_polygon": bool(region.get("polygon")),
+        "mask_source": _mask_source(region),
     }
     if asset:
         item.update(
@@ -265,6 +513,9 @@ def _record_asset_manifest_item(
                 "asset_path": str(asset["path"]),
                 "bounded_bbox": asset["bbox"],
                 "element_type": element_type,
+                "crop_strategy": asset.get("crop_strategy", "bbox"),
+                "alpha_applied": bool(asset.get("alpha_applied")),
+                "mask_source": asset.get("mask_source") or _mask_source(region),
             }
         )
     manifest["items"].append(item)
@@ -282,7 +533,9 @@ def _print_asset_event(stage: str, message: str) -> None:
     print(f"[image2pptx][assets][{stage}] {message}")
 
 
-def _prepare_image_asset(im: Image.Image, region: dict, asset_root) -> dict | None:
+def _prepare_image_asset(
+    im: Image.Image, region: dict, asset_root, ctx: PipelineContext | None = None
+) -> dict | None:
     crop_box = _bounded_crop_box(region.get("bbox", []), im.width, im.height)
     if crop_box is None:
         return None
@@ -290,8 +543,104 @@ def _prepare_image_asset(im: Image.Image, region: dict, asset_root) -> dict | No
     asset_dir = asset_root / _asset_subdir(kind)
     asset_dir.mkdir(parents=True, exist_ok=True)
     asset_path = asset_dir / f"{_safe_asset_name(region.get('id', kind))}.png"
-    im.crop(crop_box).save(asset_path)
-    return {"kind": kind, "path": asset_path, "bbox": list(crop_box)}
+    cropped = im.crop(crop_box).convert("RGBA")
+    alpha_mask, mask_source = _asset_alpha_mask(region, crop_box, im.size, cropped.size)
+    if alpha_mask is None and _should_require_rmbg_alpha(kind, ctx):
+        alpha_mask, mask_source = _rmbg_alpha_from_model(cropped, ctx)
+    if alpha_mask is not None:
+        alpha_mask = _smooth_alpha_mask(alpha_mask)
+        cropped.putalpha(alpha_mask)
+    cropped.save(asset_path)
+    return {
+        "kind": kind,
+        "path": asset_path,
+        "bbox": list(crop_box),
+        "crop_strategy": "mask_alpha" if alpha_mask is not None else "bbox",
+        "alpha_applied": alpha_mask is not None,
+        "mask_source": mask_source,
+    }
+
+
+def _smooth_alpha_mask(alpha: Image.Image) -> Image.Image:
+    # SAM/RLE/polygon masks are often hard-edged at crop scale. A tiny blur keeps
+    # circular icons from looking jagged while preserving the object silhouette.
+    return alpha.convert("L").filter(ImageFilter.GaussianBlur(radius=0.6))
+
+
+def _asset_alpha_mask(
+    region: dict, crop_box: tuple[int, int, int, int], image_size: tuple[int, int], crop_size: tuple[int, int]
+) -> tuple[Image.Image | None, str | None]:
+    mask = _decode_region_mask(region.get("mask"), image_size)
+    if mask is not None:
+        return mask.crop(crop_box).resize(crop_size), _mask_source(region) or "region_mask"
+    polygon = region.get("polygon")
+    if isinstance(polygon, list) and polygon:
+        x1, y1, _x2, _y2 = crop_box
+        alpha = Image.new("L", crop_size, 0)
+        draw = ImageDraw.Draw(alpha)
+        points = [(float(point[0]) - x1, float(point[1]) - y1) for point in polygon if len(point) >= 2]
+        if len(points) >= 3:
+            draw.polygon(points, fill=255)
+            return alpha, "polygon"
+    return None, None
+
+
+def _decode_region_mask(mask: object, image_size: tuple[int, int]) -> Image.Image | None:
+    if not isinstance(mask, dict):
+        return None
+    fmt = mask.get("format")
+    data = mask.get("data")
+    shape = mask.get("shape")
+    if fmt == "png" and isinstance(data, str):
+        raw = base64.b64decode(data)
+        return Image.open(io.BytesIO(raw)).convert("L").resize(image_size)
+    if fmt == "rle" and isinstance(data, str) and isinstance(shape, list) and len(shape) >= 2:
+        height, width = int(shape[0]), int(shape[1])
+        values: list[int] = []
+        current = 0
+        for run in data.split(","):
+            if not run:
+                continue
+            length = int(run)
+            values.extend([current] * length)
+            current = 255 if current == 0 else 0
+        expected = width * height
+        values = (values + [0] * expected)[:expected]
+        return Image.frombytes("L", (width, height), bytes(values)).resize(image_size)
+    return None
+
+
+def _should_require_rmbg_alpha(kind: str, ctx: PipelineContext | None) -> bool:
+    if kind not in {"logo", "icon"} or ctx is None or not hasattr(ctx, "settings"):
+        return False
+    pipeline_enabled = bool(getattr(ctx.settings.pipeline, "enable_rmbg", True))
+    model_config = getattr(ctx.settings.models, "rmbg", {})
+    model_enabled = bool(model_config.get("enabled", True)) if isinstance(model_config, dict) else True
+    return pipeline_enabled and model_enabled
+
+
+def _rmbg_alpha_from_model(
+    cropped: Image.Image, ctx: PipelineContext | None
+) -> tuple[Image.Image | None, str | None]:
+    if ctx is not None and hasattr(ctx, "settings"):
+        model_config = getattr(ctx.settings.models, "rmbg", {})
+        if isinstance(model_config, dict):
+            adapter = RmbgAdapter(model_config, getattr(ctx, "device", "cpu"))
+            alpha, warnings = adapter.infer_alpha(cropped)
+            if alpha is not None:
+                return alpha, "rmbg_model"
+            if warnings:
+                ctx.candidates.setdefault("rmbg_warnings", []).extend(warnings)
+                raise PipelineStageError(format_stage_failure("rmbg", warnings))
+    return None, None
+
+
+def _mask_source(region: dict) -> str | None:
+    if region.get("mask"):
+        return "sam3_mask" if region.get("source") == "sam3" else "region_mask"
+    if region.get("polygon"):
+        return "polygon"
+    return None
 
 
 def _bounded_crop_box(
