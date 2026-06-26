@@ -108,6 +108,9 @@ class Sam3Adapter:
                     "sam3_src_path": str(sam3_src_path) if sam3_src_path else None,
                 }
             ]
+        missing_modules = _missing_sam3_runtime_modules()
+        if missing_modules:
+            return [], missing_modules
         try:
             if self._local_runtime is None:
                 self._local_runtime = _LocalSam3Runtime(self.config, self.device)
@@ -265,6 +268,27 @@ def _missing_required_local_assets(config: dict[str, Any]) -> list[dict[str, Any
                 }
             )
     return warnings_
+
+
+def _missing_sam3_runtime_modules() -> list[dict[str, Any]]:
+    if importlib.util.find_spec("triton") is not None:
+        return []
+    if sys.platform.startswith("win"):
+        install_hint = "pip install triton-windows"
+    else:
+        install_hint = "pip install triton"
+    return [
+        {
+            "reason": "sam3_triton_missing",
+            "message": (
+                "SAM3 imports Triton during local runtime initialization, but the "
+                f"'triton' module is not installed. Install it with `{install_hint}` "
+                "or run SAM3 through an endpoint."
+            ),
+            "module": "triton",
+            "install_hint": install_hint,
+        }
+    ]
 
 
 def _ensure_sam3_source_on_path(config: dict[str, Any]) -> Path | None:

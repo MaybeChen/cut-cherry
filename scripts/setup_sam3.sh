@@ -6,6 +6,7 @@
 #   SAM3_SRC="/opt/sam3_src" MODELS_DIR="/models" bash scripts/setup_sam3.sh
 #   NUMPY_SPEC="numpy>=1.26,<2" bash scripts/setup_sam3.sh
 #   SETUPTOOLS_SPEC="setuptools<81" bash scripts/setup_sam3.sh
+#   TRITON_SPEC="triton-windows" bash scripts/setup_sam3.sh
 
 set -euo pipefail
 
@@ -21,9 +22,15 @@ OPENCV_SPEC="${OPENCV_SPEC:-opencv-python<4.13}"
 SCIPY_SPEC="${SCIPY_SPEC:-scipy<1.18}"
 TIFFFILE_SPEC="${TIFFFILE_SPEC:-tifffile<2026}"
 SETUPTOOLS_SPEC="${SETUPTOOLS_SPEC:-setuptools<81}"
+if [[ -z "${TRITON_SPEC:-}" ]]; then
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) TRITON_SPEC="triton-windows" ;;
+    *) TRITON_SPEC="triton" ;;
+  esac
+fi
 BPE_NAME="bpe_simple_vocab_16e6.txt.gz"
 
-echo "[1/3] Cloning SAM3 source into $SAM3_SRC from $SAM3_CLONE_URL ..."
+echo "[1/5] Cloning SAM3 source into $SAM3_SRC from $SAM3_CLONE_URL ..."
 if [[ -d "$SAM3_SRC/.git" ]]; then
   echo "Existing SAM3 source found; skip clone. Delete $SAM3_SRC to refresh."
 else
@@ -31,15 +38,18 @@ else
   git clone --depth 1 "$SAM3_CLONE_URL" "$SAM3_SRC"
 fi
 
-echo "[2/4] Aligning NumPy/OpenCV/SciPy/tifffile compatibility ..."
+echo "[2/5] Aligning NumPy/OpenCV/SciPy/tifffile compatibility ..."
 pip install --upgrade "$SETUPTOOLS_SPEC" "$NUMPY_SPEC" "$OPENCV_SPEC" "$SCIPY_SPEC" "$TIFFFILE_SPEC"
 
-echo "[3/4] Installing SAM3 package in editable mode ..."
+echo "[3/5] Installing SAM3 package in editable mode ..."
 pip install -e "$SAM3_SRC"
 pip install --upgrade "$SETUPTOOLS_SPEC" "$NUMPY_SPEC" "$OPENCV_SPEC" "$SCIPY_SPEC" "$TIFFFILE_SPEC"
+
+echo "[4/5] Installing Triton dependency for SAM3 local runtime: $TRITON_SPEC ..."
+pip install --upgrade "$TRITON_SPEC"
 pip check
 
-echo "[4/4] Copying BPE vocab into $MODELS_DIR ..."
+echo "[5/5] Copying BPE vocab into $MODELS_DIR ..."
 mkdir -p "$MODELS_DIR"
 for BPE_SRC in "$SAM3_SRC/assets/$BPE_NAME" "$SAM3_SRC/sam3/assets/$BPE_NAME"; do
   if [[ -f "$BPE_SRC" ]]; then
