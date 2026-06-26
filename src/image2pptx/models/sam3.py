@@ -51,6 +51,9 @@ class Sam3Adapter:
         endpoint = self.config.get("endpoint")
         if endpoint:
             return self._infer_endpoint(str(endpoint), image_path)
+        missing_assets = _missing_required_local_assets(self.config)
+        if missing_assets:
+            return [], missing_assets
         model_path = self.config.get("model_path") or self.config.get("checkpoint_path")
         if model_path and Path(str(model_path)).exists():
             return self._infer_local(image_path)
@@ -61,6 +64,7 @@ class Sam3Adapter:
                     "Set models.sam3.endpoint or models.sam3.model_path/checkpoint_path "
                     "to enable SAM3 visual proposals."
                 ),
+                "model_path": str(model_path) if model_path else None,
             }
         ]
 
@@ -245,6 +249,22 @@ def _import_sam3_model_builder() -> Any:
             category=UserWarning,
         )
         return importlib.import_module("sam3.model_builder")
+
+
+def _missing_required_local_assets(config: dict[str, Any]) -> list[dict[str, Any]]:
+    warnings_: list[dict[str, Any]] = []
+    for key in ("model_path", "checkpoint_path", "bpe_path"):
+        value = config.get(key)
+        if value and not Path(str(value)).exists():
+            warnings_.append(
+                {
+                    "reason": "sam3_asset_missing",
+                    "message": f"Configured models.sam3.{key} does not exist: {value}",
+                    "key": key,
+                    "path": str(value),
+                }
+            )
+    return warnings_
 
 
 def _ensure_sam3_source_on_path(config: dict[str, Any]) -> Path | None:

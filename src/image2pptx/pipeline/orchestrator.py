@@ -184,9 +184,27 @@ def _summarize_degradation(ctx: PipelineContext, name: str) -> list[str]:
         if not warnings:
             continue
         reasons = [str(item.get("reason", "unknown")) for item in warnings if isinstance(item, dict)]
-        lines.append(f"warnings={key}:{len(warnings)} reasons={reasons}")
+        details = _warning_details(warnings)
+        suffix = f" details={details}" if details else ""
+        lines.append(f"warnings={key}:{len(warnings)} reasons={reasons}{suffix}")
         lines.append(f"fallback={_fallback_for_warning_key(key)}")
     return lines
+
+
+def _warning_details(warnings: list) -> list[str]:
+    details: list[str] = []
+    for item in warnings[:3]:
+        if not isinstance(item, dict):
+            continue
+        message = item.get("message") or item.get("path") or item.get("sam3_src_path")
+        if message:
+            details.append(_shorten_warning_detail(str(message)))
+    return details
+
+
+def _shorten_warning_detail(value: str, limit: int = 180) -> str:
+    value = " ".join(value.split())
+    return value if len(value) <= limit else value[: limit - 3] + "..."
 
 
 def _fallback_for_warning_key(key: str) -> str:

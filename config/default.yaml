@@ -50,9 +50,9 @@ models:
     timeout: 30
     sam3_src_path: sam3_src
     source_path: null
-    model_path: null
+    model_path: models/sam3/sam3.pt
     checkpoint_path: null
-    bpe_path: null
+    bpe_path: models/sam3/bpe_simple_vocab_16e6.txt.gz
     load_from_hf: false
     prompts: [icon, logo, image, photo, picture, figure, illustration, screenshot, chart, diagram symbol, product image]
     score_threshold: 0.35

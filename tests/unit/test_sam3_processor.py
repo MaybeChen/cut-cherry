@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from image2pptx.models.sam3 import _ensure_sam3_source_on_path, normalize_sam3_result
+from image2pptx.models.sam3 import Sam3Adapter, _ensure_sam3_source_on_path, normalize_sam3_result
 from image2pptx.processors.sam3_processor import Sam3Processor
 
 
@@ -105,3 +105,21 @@ def test_ensure_sam3_source_on_path_accepts_banana_sam3_src(tmp_path, monkeypatc
     import sys
 
     assert sys.path[0] == str(sam3_src.resolve())
+
+
+def test_sam3_adapter_reports_missing_configured_assets(tmp_path) -> None:
+    image = tmp_path / "normalized.png"
+    image.write_bytes(b"fake")
+
+    regions, warnings = Sam3Adapter(
+        {
+            "enabled": True,
+            "model_path": str(tmp_path / "models" / "sam3.pt"),
+            "bpe_path": str(tmp_path / "models" / "bpe_simple_vocab_16e6.txt.gz"),
+        },
+        "cpu",
+    ).infer(image)
+
+    assert regions == []
+    assert [warning["reason"] for warning in warnings] == ["sam3_asset_missing", "sam3_asset_missing"]
+    assert warnings[0]["key"] == "model_path"
