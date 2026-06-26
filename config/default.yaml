@@ -35,25 +35,52 @@ models:
     # Switch engine between pp_structure_v3 and paddleocr_vl here; no separate app config is required.
     paddlex_config: models/layout/pp_structure_v3/PP-StructureV3.yaml
     model_dir: null
-    layout_model_dir: models/layout/pp_structure_v3
+    layout_model_dir: null
     pipeline_name: PaddleOCR-VL
     paddleocr_vl_model_dir: models/layout/paddleocr_vl
     use_table_recognition: true
     use_formula_recognition: true
-    use_chart_recognition: true
+    use_chart_recognition: false
     use_region_detection: true
   sam3:
     enabled: true
+    device: cpu
     endpoint: null
-    model_path: null
+    send_device: false
+    timeout: 30
+    sam3_src_path: sam3_src
+    source_path: null
+    model_path: models/sam3/sam3.pt
+    checkpoint_path: null
+    bpe_path: models/sam3/bpe_simple_vocab_16e6.txt.gz
+    load_from_hf: false
+    prompts: [icon, logo, image, photo, picture, figure, illustration, screenshot, chart, diagram symbol, product image]
+    score_threshold: 0.35
+    epsilon_factor: 0.02
+    min_area: 40
+    return_masks: true
+    mask_format: rle
   rmbg:
     enabled: true
     model_path: models/rmbg.onnx
   vlm:
     enabled: false
     provider: openai_compatible
+    base_url: https://apigw-cn-south02.huawei.com/api/beta/pangu_s_maas/gtsllm-vl-standard/v1
     endpoint: null
-    model: null
+    model: GTSLLM-VL-Standard
+    timeout: 60
+    temperature: 0
+    max_tokens: 1200
+    x_hw_id: null
+    x_hw_appkey: null
+    headers:
+      X-HW-ID: null
+      X-HW-APPKEY: null
+  formula_ocr:
+    enabled: false
+    engine: pix2text
+    model_dir: models/formula/pix2text
 render:
   slide_size_mode: auto
   default_widescreen_ratio: "16:9"
