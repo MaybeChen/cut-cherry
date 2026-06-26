@@ -1,8 +1,10 @@
 import json
 from types import SimpleNamespace
 
+import pytest
 from PIL import Image
 
+from image2pptx.core.errors import PipelineStageError
 from image2pptx.ir.elements import ElementType
 from image2pptx.processors.candidate_fusion import CandidateFusionProcessor
 
@@ -222,3 +224,216 @@ def test_candidate_fusion_suppresses_ocr_text_inside_icon_region(tmp_path):
 
     assert "icon_0" in element_ids
     assert "text_misread_icon" not in element_ids
+
+
+def test_candidate_fusion_manifest_records_mask_metadata(tmp_path):
+    normalized = tmp_path / "normalized.png"
+    Image.new("RGB", (160, 120), "white").save(normalized)
+    ctx = SimpleNamespace(
+        job_id="job_mask_asset",
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        candidates={
+            "layout_regions": [
+                {
+                    "id": "sam3_logo",
+                    "kind": "logo_candidate",
+                    "bbox": [10, 10, 70, 50],
+                    "confidence": 0.88,
+                    "source": "sam3",
+                    "mask": {"format": "rle", "data": "5,5", "shape": [120, 160]},
+                    "polygon": [[10, 10], [70, 10], [70, 50], [10, 50]],
+                }
+            ],
+            "text_blocks": [],
+            "shapes": [],
+            "formulas": [],
+            "charts": [],
+            "connectors": [],
+        },
+    )
+
+    CandidateFusionProcessor().run(ctx)
+
+    manifest = json.loads((tmp_path / "assets" / "image_assets.json").read_text())
+    item = manifest["items"][0]
+    assert item["source"] == "sam3"
+    assert item["has_mask"] is True
+    assert item["has_polygon"] is True
+    assert item["mask_source"] == "sam3_mask"
+    assert item["crop_strategy"] == "mask_alpha"
+
+
+def test_candidate_fusion_applies_sam3_png_mask_alpha(tmp_path):
+    import base64
+    import io
+
+    normalized = tmp_path / "normalized.png"
+    Image.new("RGB", (100, 80), "red").save(normalized)
+    mask = Image.new("L", (100, 80), 0)
+    for y in range(10, 50):
+        for x in range(20, 70):
+            mask.putpixel((x, y), 255)
+    buffer = io.BytesIO()
+    mask.save(buffer, format="PNG")
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    ctx = SimpleNamespace(
+        job_id="job_alpha",
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        settings=SimpleNamespace(
+            pipeline=SimpleNamespace(enable_rmbg=True),
+            models=SimpleNamespace(rmbg={"enabled": True}),
+        ),
+        candidates={
+            "layout_regions": [
+                {
+                    "id": "sam3_icon",
+                    "kind": "icon_candidate",
+                    "bbox": [20, 10, 70, 50],
+                    "confidence": 0.9,
+                    "source": "sam3",
+                    "mask": {"format": "png", "data": encoded, "shape": [80, 100]},
+                }
+            ],
+            "text_blocks": [],
+            "shapes": [],
+            "formulas": [],
+            "charts": [],
+            "connectors": [],
+        },
+    )
+
+    CandidateFusionProcessor().run(ctx)
+
+    asset = Image.open(tmp_path / "assets" / "icons" / "sam3_icon.png")
+    assert asset.mode == "RGBA"
+    assert asset.getpixel((0, 0))[3] == 255
+    manifest = json.loads((tmp_path / "assets" / "image_assets.json").read_text())
+    assert manifest["items"][0]["alpha_applied"] is True
+    assert manifest["items"][0]["mask_source"] == "sam3_mask"
+    assert manifest["items"][0]["crop_strategy"] == "mask_alpha"
+
+
+def test_candidate_fusion_fails_when_required_rmbg_is_unavailable(tmp_path):
+    normalized = tmp_path / "normalized.png"
+    image = Image.new("RGB", (100, 80), "white")
+    for y in range(20, 60):
+        for x in range(30, 70):
+            image.putpixel((x, y), (0, 80, 200))
+    image.save(normalized)
+    ctx = SimpleNamespace(
+        job_id="job_rmbg",
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        settings=SimpleNamespace(
+            pipeline=SimpleNamespace(enable_rmbg=True),
+            models=SimpleNamespace(rmbg={"enabled": True}),
+        ),
+        candidates={
+            "layout_regions": [
+                {
+                    "id": "logo_requires_rmbg",
+                    "kind": "logo_candidate",
+                    "bbox": [20, 10, 80, 70],
+                    "confidence": 0.8,
+                }
+            ],
+            "text_blocks": [],
+            "shapes": [],
+            "formulas": [],
+            "charts": [],
+            "connectors": [],
+        },
+    )
+
+    with pytest.raises(PipelineStageError, match="rmbg_not_available"):
+        CandidateFusionProcessor().run(ctx)
+
+
+def test_candidate_fusion_applies_polygon_alpha(tmp_path):
+    normalized = tmp_path / "normalized.png"
+    Image.new("RGB", (80, 80), "green").save(normalized)
+    ctx = SimpleNamespace(
+        job_id="job_polygon_alpha",
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        settings=SimpleNamespace(
+            pipeline=SimpleNamespace(enable_rmbg=False),
+            models=SimpleNamespace(rmbg={"enabled": False}),
+        ),
+        candidates={
+            "layout_regions": [
+                {
+                    "id": "poly_icon",
+                    "kind": "icon_candidate",
+                    "bbox": [10, 10, 50, 50],
+                    "confidence": 0.8,
+                    "polygon": [[20, 20], [40, 20], [40, 40], [20, 40]],
+                }
+            ],
+            "text_blocks": [],
+            "shapes": [],
+            "formulas": [],
+            "charts": [],
+            "connectors": [],
+        },
+    )
+
+    CandidateFusionProcessor().run(ctx)
+
+    asset = Image.open(tmp_path / "assets" / "icons" / "poly_icon.png")
+    assert asset.mode == "RGBA"
+    assert asset.getpixel((0, 0))[3] == 0
+    assert asset.getpixel((15, 15))[3] == 255
+    manifest = json.loads((tmp_path / "assets" / "image_assets.json").read_text())
+    assert manifest["items"][0]["mask_source"] == "polygon"
+
+
+def test_candidate_fusion_skips_large_structural_image_container(tmp_path, capsys):
+    normalized = tmp_path / "normalized.png"
+    Image.new("RGB", (1000, 600), "white").save(normalized)
+    text_blocks = [
+        {
+            "id": f"text_block_{idx}",
+            "kind": "paragraph",
+            "text": f"Block {idx}",
+            "bbox": [100, 100 + idx * 30, 300, 120 + idx * 30],
+            "confidence": 0.95,
+        }
+        for idx in range(6)
+    ]
+    ctx = SimpleNamespace(
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        candidates={
+            "layout_regions": [
+                {
+                    "id": "layout_model_0",
+                    "kind": "image_candidate",
+                    "bbox": [40, 60, 960, 540],
+                    "confidence": 0.9,
+                    "source": "layout_model",
+                },
+                *text_blocks,
+            ],
+            "text_blocks": text_blocks,
+            "shapes": [],
+            "formulas": [],
+            "charts": [],
+            "connectors": [],
+            "sam3_regions": [],
+        },
+    )
+
+    slide = CandidateFusionProcessor().run(ctx)
+    element_types = {element.id: element.type for element in slide.elements}
+
+    assert "layout_model_0" not in element_types
+    assert element_types["text_block_0"] == ElementType.TEXT
+    assert not (tmp_path / "assets" / "images" / "layout_model_0.png").exists()
+    output = capsys.readouterr().out
+    assert "reason=structural_container" in output
+    manifest = json.loads((tmp_path / "assets" / "image_assets.json").read_text())
+    assert manifest["candidate_count"] == 1
+    assert manifest["items"][0]["status"] == "skipped_structural_container"

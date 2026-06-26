@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
+
+from PIL import Image
 from pydantic import BaseModel, Field
 
 from image2pptx.ir.elements import Rect, SlideElement
@@ -34,7 +37,8 @@ class SlideIR(BaseModel):
         return overlaps
 
     def export_json(self, path: Path) -> None:
-        path.write_text(self.model_dump_json(indent=2), encoding="utf-8")
+        payload = _json_safe(self.model_dump(mode="python"))
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     @classmethod
     def load_json(cls, path: Path) -> "SlideIR":
@@ -46,3 +50,21 @@ def _iou(a: Rect, b: Rect) -> float:
     inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
     union = a.area() + b.area() - inter
     return inter / union if union else 0.0
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_safe(nested) for key, nested in value.items()}
+    if isinstance(value, list | tuple | set):
+        return [_json_safe(nested) for nested in value]
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, Image.Image):
+        return f"<PIL.Image mode={value.mode} size={value.size}>"
+    if hasattr(value, "tolist") and callable(value.tolist):
+        return _json_safe(value.tolist())
+    try:
+        json.dumps(value)
+    except TypeError:
+        return repr(value)
+    return value
