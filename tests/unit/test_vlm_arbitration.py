@@ -10,7 +10,7 @@ def test_vlm_headers_include_huawei_gateway_keys():
 
 
 def test_parse_openai_chat_json_content():
-    body = '{"choices":[{"message":{"content":"{\\\"items\\\":[{\\\"id\\\":\\\"a\\\",\\\"keep\\\":false}]}"}}]}'
+    body = '{"choices":[{"message":{"content":"{\\"items\\":[{\\"id\\":\\"a\\",\\"keep\\":false}]}"}}]}'
 
     assert _parse_chat_json(body)["items"][0]["id"] == "a"
 
@@ -25,7 +25,17 @@ def test_apply_vlm_arbitration_updates_layers_and_counts():
 
     apply_vlm_arbitration(
         layers,
-        {"items": [{"id": "t", "semantic_type": "label", "parent_id": "c", "style": {"font_color": "#ffffff"}}, {"id": "a", "keep": False}]},
+        {
+            "items": [
+                {
+                    "id": "t",
+                    "semantic_type": "label",
+                    "parent_id": "c",
+                    "style": {"font_color": "#ffffff"},
+                },
+                {"id": "a", "keep": False},
+            ]
+        },
     )
 
     assert layers["texts"][0]["semantic_type"] == "label"

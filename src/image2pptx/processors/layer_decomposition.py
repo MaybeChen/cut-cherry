@@ -30,14 +30,23 @@ class LayerDecompositionProcessor:
         ctx.artifacts["layer_decomposition"] = report_path
 
 
-def build_layers(candidates: dict[str, Any], slide_size: tuple[int, int], image: Image.Image | None = None) -> dict[str, Any]:
+def build_layers(
+    candidates: dict[str, Any], slide_size: tuple[int, int], image: Image.Image | None = None
+) -> dict[str, Any]:
     layout_regions = [dict(region) for region in candidates.get("layout_regions", [])]
     sam3_regions = [_normalize_sam3_region(region) for region in candidates.get("sam3_regions", [])]
     visual_regions = _dedupe_visual_regions([*layout_regions, *sam3_regions])
-    text_regions = [dict(text) for text in candidates.get("text_layer") or candidates.get("text_blocks") or candidates.get("text", [])]
+    text_regions = [
+        dict(text)
+        for text in candidates.get("text_layer")
+        or candidates.get("text_blocks")
+        or candidates.get("text", [])
+    ]
     shape_regions = [dict(shape) for shape in candidates.get("shapes", [])]
     connector_regions = [dict(connector) for connector in candidates.get("connectors", [])]
-    containers = _container_regions(visual_regions, shape_regions, text_regions, connector_regions, slide_size, image)
+    containers = _container_regions(
+        visual_regions, shape_regions, text_regions, connector_regions, slide_size, image
+    )
     assets = _asset_regions(visual_regions, containers)
     texts = [_with_parent(_apply_text_style(text, image), containers) for text in text_regions]
     assets = [_with_parent(asset, containers) for asset in assets]
@@ -69,11 +78,15 @@ def _container_regions(
     for shape in shape_regions:
         if len(shape.get("bbox", [])) != 4:
             continue
-        containers.append(_normalize_container(shape, source=shape.get("source", "geometry"), image=image))
+        containers.append(
+            _normalize_container(shape, source=shape.get("source", "geometry"), image=image)
+        )
     for region in layout_regions:
         if not _is_structural_image_container(region, text_regions, connector_regions, slide_size):
             continue
-        containers.append(_normalize_container(region, source=region.get("source", "layout"), image=image))
+        containers.append(
+            _normalize_container(region, source=region.get("source", "layout"), image=image)
+        )
     return _dedupe_containers(containers)
 
 
@@ -90,7 +103,11 @@ def _asset_regions(layout_regions: list[dict], containers: list[dict]) -> list[d
 
 def _normalize_container(region: dict, source: str, image: Image.Image | None = None) -> dict:
     bbox = [float(value) for value in region.get("bbox", [])]
-    fill_color = region.get("fill_color") or _sample_fill_color(image, bbox) or _default_container_fill(region)
+    fill_color = (
+        region.get("fill_color")
+        or _sample_fill_color(image, bbox)
+        or _default_container_fill(region)
+    )
     style = {
         "fill_color": fill_color,
         "line_color": region.get("line_color", "#d7e4f2"),
@@ -104,7 +121,8 @@ def _normalize_container(region: dict, source: str, image: Image.Image | None = 
         "fill_color": fill_color,
         "line_color": style["line_color"],
         "style": style,
-        "semantic_type": region.get("semantic_type") or _infer_container_semantic_type(region, bbox),
+        "semantic_type": region.get("semantic_type")
+        or _infer_container_semantic_type(region, bbox),
         "confidence": float(region.get("confidence", 0.5)),
         "source": source,
         "source_id": region.get("id"),
@@ -119,7 +137,10 @@ def _default_container_fill(region: dict) -> str:
 
 
 def _is_structural_image_container(
-    region: dict, text_regions: list[dict], connector_regions: list[dict], slide_size: tuple[int, int]
+    region: dict,
+    text_regions: list[dict],
+    connector_regions: list[dict],
+    slide_size: tuple[int, int],
 ) -> bool:
     if region.get("kind") != "image_candidate" or len(region.get("bbox", [])) != 4:
         return False
@@ -128,9 +149,18 @@ def _is_structural_image_container(
     area_ratio = _bbox_area(bbox) / max(width * height, 1)
     if area_ratio < 0.08:
         return False
-    text_inside = sum(1 for text in text_regions if _overlap_ratio(text.get("bbox", []), bbox) >= 0.8)
-    connector_inside = sum(1 for connector in connector_regions if _connector_inside(connector, bbox))
-    if region.get("source") == "sam3" and region.get("has_mask") and area_ratio >= 0.04 and (text_inside >= 2 or connector_inside >= 3):
+    text_inside = sum(
+        1 for text in text_regions if _overlap_ratio(text.get("bbox", []), bbox) >= 0.8
+    )
+    connector_inside = sum(
+        1 for connector in connector_regions if _connector_inside(connector, bbox)
+    )
+    if (
+        region.get("source") == "sam3"
+        and region.get("has_mask")
+        and area_ratio >= 0.04
+        and (text_inside >= 2 or connector_inside >= 3)
+    ):
         return True
     return text_inside >= 3 or connector_inside >= 6
 
@@ -164,7 +194,11 @@ def _with_connector_parent(connector: dict, containers: list[dict]) -> dict:
 def _best_container(bbox: list[float], containers: list[dict]) -> dict | None:
     if len(bbox) != 4:
         return None
-    matches = [container for container in containers if _overlap_ratio(bbox, container.get("bbox", [])) >= 0.75]
+    matches = [
+        container
+        for container in containers
+        if _overlap_ratio(bbox, container.get("bbox", [])) >= 0.75
+    ]
     return min(matches, key=lambda container: _bbox_area(container.get("bbox", [])), default=None)
 
 
@@ -208,13 +242,18 @@ def _normalize_sam3_region(region: dict) -> dict:
     normalized = dict(region)
     normalized.setdefault("source", "sam3")
     if normalized.get("id") is None:
-        bbox_token = "_".join(str(int(float(value))) for value in normalized.get("bbox", [])[:4]) or "unknown"
+        bbox_token = (
+            "_".join(str(int(float(value))) for value in normalized.get("bbox", [])[:4])
+            or "unknown"
+        )
         normalized["id"] = f"sam3_{bbox_token}"
     if normalized.get("mask") is not None:
         normalized["has_mask"] = True
     if normalized.get("polygon") is not None:
         normalized["has_polygon"] = True
-    label = str(normalized.get("label") or normalized.get("prompt") or normalized.get("kind") or "").lower()
+    label = str(
+        normalized.get("label") or normalized.get("prompt") or normalized.get("kind") or ""
+    ).lower()
     if "icon" in label or "symbol" in label:
         normalized["kind"] = "icon_candidate"
     elif "logo" in label:
@@ -226,7 +265,9 @@ def _normalize_sam3_region(region: dict) -> dict:
 
 def _dedupe_visual_regions(regions: list[dict]) -> list[dict]:
     deduped: list[dict] = []
-    for region in sorted(regions, key=lambda item: (_source_priority(item), -float(item.get("confidence", 0.0)))):
+    for region in sorted(
+        regions, key=lambda item: (_source_priority(item), -float(item.get("confidence", 0.0)))
+    ):
         bbox = region.get("bbox", [])
         if len(bbox) != 4:
             continue
@@ -328,7 +369,9 @@ def _infer_container_semantic_type(region: dict, bbox: list[float]) -> str:
     label = " ".join(str(region.get(key, "")).lower() for key in ("id", "label", "kind", "text"))
     if "callout" in label:
         return "callout"
-    if "panel" in label or (len(bbox) == 4 and bbox[0] > 0 and (bbox[2] - bbox[0]) < (bbox[3] - bbox[1]) * 1.2):
+    if "panel" in label or (
+        len(bbox) == 4 and bbox[0] > 0 and (bbox[2] - bbox[0]) < (bbox[3] - bbox[1]) * 1.2
+    ):
         return "panel"
     return "container"
 

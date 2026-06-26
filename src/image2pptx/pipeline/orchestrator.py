@@ -44,14 +44,29 @@ class ImageToPptxPipeline:
             settings=self.settings,
             device=device,
         )
-        _run_stage(ctx, "preprocess", "规范化输入、生成灰度/边缘/颜色空间等中间产物", PreprocessProcessor().run)
+        _run_stage(
+            ctx,
+            "preprocess",
+            "规范化输入、生成灰度/边缘/颜色空间等中间产物",
+            PreprocessProcessor().run,
+        )
         if self.settings.pipeline.enable_geometry:
             _run_stage(ctx, "geometry", "OpenCV 轮廓/矩形/线段候选提取", GeometryProcessor().run)
-            _run_stage(ctx, "arrow", "Hough 线段转基础 connector；箭头头部识别失败将直接报错", ArrowProcessor().run)
+            _run_stage(
+                ctx,
+                "arrow",
+                "Hough 线段转基础 connector；箭头头部识别失败将直接报错",
+                ArrowProcessor().run,
+            )
         else:
             _print_stage_skipped("geometry+arrow", "settings.pipeline.enable_geometry=false")
         if self.settings.pipeline.enable_sam3:
-            _run_stage(ctx, "sam3", "SAM3 endpoint/local runtime 视觉候选；失败时直接中断并打印原因", Sam3Processor().run)
+            _run_stage(
+                ctx,
+                "sam3",
+                "SAM3 endpoint/local runtime 视觉候选；失败时直接中断并打印原因",
+                Sam3Processor().run,
+            )
         else:
             _print_stage_skipped("sam3", "settings.pipeline.enable_sam3=false")
         if self.settings.pipeline.enable_text:
@@ -59,15 +74,30 @@ class ImageToPptxPipeline:
         else:
             _print_stage_skipped("text", "settings.pipeline.enable_text=false")
         if self.settings.pipeline.enable_layout:
-            _run_stage(ctx, "layout", "结构化 layout 模型 + 规则区域融合；模型失败时直接中断", LayoutParserProcessor().run)
+            _run_stage(
+                ctx,
+                "layout",
+                "结构化 layout 模型 + 规则区域融合；模型失败时直接中断",
+                LayoutParserProcessor().run,
+            )
         else:
             _print_stage_skipped("layout", "settings.pipeline.enable_layout=false")
         if self.settings.pipeline.enable_text:
-            _run_stage(ctx, "text_layer", "OCR 结果行/角色/样式归一化，形成可编辑 TextLayer", TextLayerProcessor().run)
+            _run_stage(
+                ctx,
+                "text_layer",
+                "OCR 结果行/角色/样式归一化，形成可编辑 TextLayer",
+                TextLayerProcessor().run,
+            )
         else:
             _print_stage_skipped("text_layer", "settings.pipeline.enable_text=false")
         if self.settings.pipeline.enable_table:
-            _run_stage(ctx, "table", "表格 cell/html 结构归一化；缺失结构时保留候选 bbox", TableProcessor().run)
+            _run_stage(
+                ctx,
+                "table",
+                "表格 cell/html 结构归一化；缺失结构时保留候选 bbox",
+                TableProcessor().run,
+            )
         else:
             _print_stage_skipped("table", "settings.pipeline.enable_table=false")
         if self.settings.pipeline.enable_formula:
@@ -85,7 +115,12 @@ class ImageToPptxPipeline:
             LayerDecompositionProcessor().run,
         )
         if self.settings.pipeline.enable_vlm:
-            _run_stage(ctx, "vlm_arbitration", "OpenAI 兼容 VLM 对分层候选做语义仲裁；失败时直接中断", VlmArbitrationProcessor().run)
+            _run_stage(
+                ctx,
+                "vlm_arbitration",
+                "OpenAI 兼容 VLM 对分层候选做语义仲裁；失败时直接中断",
+                VlmArbitrationProcessor().run,
+            )
         else:
             _print_stage_skipped("vlm_arbitration", "settings.pipeline.enable_vlm=false")
         ir = _run_stage(
@@ -95,7 +130,12 @@ class ImageToPptxPipeline:
             CandidateFusionProcessor().run,
         )
         ir_path = job_dir / "slide_ir.json"
-        _run_stage(ctx, "slide_ir_export", f"写出 SlideIR JSON: {ir_path}", lambda _ctx: ir.export_json(ir_path))
+        _run_stage(
+            ctx,
+            "slide_ir_export",
+            f"写出 SlideIR JSON: {ir_path}",
+            lambda _ctx: ir.export_json(ir_path),
+        )
         pptx = _run_stage(
             ctx,
             "pptx_render",
@@ -170,7 +210,9 @@ def _safe_len(value) -> int:
     return 1 if value is not None else 0
 
 
-def _summarize_delta(before: dict[str, dict[str, int]], after: dict[str, dict[str, int]]) -> list[str]:
+def _summarize_delta(
+    before: dict[str, dict[str, int]], after: dict[str, dict[str, int]]
+) -> list[str]:
     lines: list[str] = []
     for section in ("artifacts", "candidates"):
         added = sorted(set(after[section]) - set(before[section]))
@@ -180,7 +222,9 @@ def _summarize_delta(before: dict[str, dict[str, int]], after: dict[str, dict[st
             if after[section][key] != before[section][key]
         )
         if added:
-            lines.append(f"{section}_added={{{', '.join(f'{key}:{after[section][key]}' for key in added)}}}")
+            lines.append(
+                f"{section}_added={{{', '.join(f'{key}:{after[section][key]}' for key in added)}}}"
+            )
         if changed:
             lines.append(
                 f"{section}_changed={{{', '.join(f'{key}:{before[section][key]}->{after[section][key]}' for key in changed)}}}"
@@ -200,7 +244,9 @@ def _summarize_degradation(ctx: PipelineContext, name: str) -> list[str]:
         warnings = candidates.get(key) or []
         if not warnings:
             continue
-        reasons = [str(item.get("reason", "unknown")) for item in warnings if isinstance(item, dict)]
+        reasons = [
+            str(item.get("reason", "unknown")) for item in warnings if isinstance(item, dict)
+        ]
         details = _warning_details(warnings)
         suffix = f" details={details}" if details else ""
         lines.append(f"warnings={key}:{len(warnings)} reasons={reasons}{suffix}")
@@ -222,4 +268,3 @@ def _warning_details(warnings: list) -> list[str]:
 def _shorten_warning_detail(value: str, limit: int = 180) -> str:
     value = " ".join(value.split())
     return value if len(value) <= limit else value[: limit - 3] + "..."
-

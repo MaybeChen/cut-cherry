@@ -31,9 +31,13 @@ class SlideIR(BaseModel):
     def find_overlaps(self, min_iou: float = 0.01) -> list[ElementRelation]:
         overlaps: list[ElementRelation] = []
         for i, left in enumerate(self.elements):
-            for right in self.elements[i + 1:]:
+            for right in self.elements[i + 1 :]:
                 if _iou(left.bbox, right.bbox) >= min_iou:
-                    overlaps.append(ElementRelation(source_id=left.id, target_id=right.id, type=RelationType.OVERLAPS))
+                    overlaps.append(
+                        ElementRelation(
+                            source_id=left.id, target_id=right.id, type=RelationType.OVERLAPS
+                        )
+                    )
         return overlaps
 
     def export_json(self, path: Path) -> None:

@@ -414,9 +414,7 @@ def _detect_raster_icon_candidates(
     existing_image_regions: list[dict] | None = None,
 ) -> list[dict]:
     """Backward-compatible alias for older tests/callers."""
-    return _detect_raster_visual_candidates(
-        ctx, text_blocks, slide_size, existing_image_regions
-    )
+    return _detect_raster_visual_candidates(ctx, text_blocks, slide_size, existing_image_regions)
 
 
 def _find_foreground_components(image: Image.Image) -> list[dict]:
@@ -460,7 +458,10 @@ def _find_foreground_components(image: Image.Image) -> list[dict]:
     components = colored_components + [
         component
         for component in neutral_components
-        if not any(_overlap_ratio(component["bbox"], colored["bbox"]) > 0.6 for colored in colored_components)
+        if not any(
+            _overlap_ratio(component["bbox"], colored["bbox"]) > 0.6
+            for colored in colored_components
+        )
     ]
     if scale != 1.0:
         inv = 1 / scale

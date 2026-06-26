@@ -4,6 +4,7 @@ The adapter is lazy/offline-safe and keeps provider details in configuration.  I
 expects an OpenAI chat-completions compatible endpoint and supports Huawei Pangu
 MAAS gateway headers through ``x_hw_id`` and ``x_hw_appkey`` config keys.
 """
+
 from __future__ import annotations
 
 import json
@@ -16,7 +17,9 @@ class VlmAdapter:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
 
-    def infer_json(self, messages: list[dict[str, Any]], *, max_tokens: int = 1200) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    def infer_json(
+        self, messages: list[dict[str, Any]], *, max_tokens: int = 1200
+    ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
         if not bool(self.config.get("enabled", False)):
             return None, [{"reason": "vlm_disabled"}]
         base_url = str(self.config.get("base_url") or self.config.get("endpoint") or "").rstrip("/")
@@ -47,7 +50,13 @@ class VlmAdapter:
             with urlopen(request, timeout=timeout) as response:  # noqa: S310 - configured internal gateway endpoint
                 body = response.read().decode("utf-8")
         except HTTPError as exc:
-            return None, [{"reason": "vlm_http_error", "status": exc.code, "message": exc.read().decode("utf-8", errors="ignore")}]
+            return None, [
+                {
+                    "reason": "vlm_http_error",
+                    "status": exc.code,
+                    "message": exc.read().decode("utf-8", errors="ignore"),
+                }
+            ]
         except URLError as exc:
             return None, [{"reason": "vlm_request_failed", "message": str(exc.reason)}]
         except TimeoutError as exc:
@@ -55,7 +64,9 @@ class VlmAdapter:
         try:
             return _parse_chat_json(body), []
         except (json.JSONDecodeError, KeyError, TypeError, IndexError) as exc:
-            return None, [{"reason": "vlm_invalid_response", "message": str(exc), "body": body[:500]}]
+            return None, [
+                {"reason": "vlm_invalid_response", "message": str(exc), "body": body[:500]}
+            ]
 
 
 def _build_headers(config: dict[str, Any]) -> dict[str, str]:
@@ -71,7 +82,9 @@ def _build_headers(config: dict[str, Any]) -> dict[str, str]:
         headers["X-HW-APPKEY"] = str(x_hw_appkey)
     extra_headers = config.get("headers") or {}
     if isinstance(extra_headers, dict):
-        headers.update({str(key): str(value) for key, value in extra_headers.items() if value is not None})
+        headers.update(
+            {str(key): str(value) for key, value in extra_headers.items() if value is not None}
+        )
     return headers
 
 

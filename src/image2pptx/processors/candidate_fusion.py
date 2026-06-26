@@ -25,7 +25,9 @@ class CandidateFusionProcessor:
     def run(self, ctx: PipelineContext) -> SlideIR:
         im = Image.open(ctx.artifacts["normalized"])
         slide = SlideIR(width=im.width, height=im.height)
-        layers = ctx.candidates.get("layers") if isinstance(ctx.candidates.get("layers"), dict) else {}
+        layers = (
+            ctx.candidates.get("layers") if isinstance(ctx.candidates.get("layers"), dict) else {}
+        )
         layout_regions = ctx.candidates.get("layout_regions", [])
         table_regions = [r for r in layout_regions if r.get("kind") == "table_candidate"]
         image_regions = (
@@ -37,7 +39,9 @@ class CandidateFusionProcessor:
                 if r.get("kind") in {"image_candidate", "logo_candidate", "icon_candidate"}
             ]
         )
-        asset_image_regions, structural_image_regions = _split_asset_image_regions(ctx, image_regions, im)
+        asset_image_regions, structural_image_regions = _split_asset_image_regions(
+            ctx, image_regions, im
+        )
         formula_regions = ctx.candidates.get("formulas", [])
         chart_regions = ctx.candidates.get("charts", [])
         asset_root = ctx.job_dir / "assets"
@@ -173,9 +177,15 @@ class CandidateFusionProcessor:
                     editable_strategy=EditableStrategy.NATIVE_CHART,
                 )
             )
-        text_source = list(layers.get("texts", [])) if layers else (ctx.candidates.get("text_blocks") or ctx.candidates.get("text", []))
+        text_source = (
+            list(layers.get("texts", []))
+            if layers
+            else (ctx.candidates.get("text_blocks") or ctx.candidates.get("text", []))
+        )
         text_candidates = _split_text_candidates_for_layout(text_source)
-        base_shapes = list(layers.get("containers", [])) if layers else ctx.candidates.get("shapes", [])
+        base_shapes = (
+            list(layers.get("containers", [])) if layers else ctx.candidates.get("shapes", [])
+        )
         shape_candidates = [
             *base_shapes,
             *_synthesize_supporting_cards(ctx, im, base_shapes, text_candidates),
@@ -196,8 +206,12 @@ class CandidateFusionProcessor:
                     z_index=10,
                     style=ElementStyle(
                         fill_color=(s.get("style") or {}).get("fill_color", s.get("fill_color")),
-                        line_color=(s.get("style") or {}).get("line_color", s.get("line_color", "#666666")),
-                        line_width=float((s.get("style") or {}).get("line_width", s.get("line_width", 1.0))),
+                        line_color=(s.get("style") or {}).get(
+                            "line_color", s.get("line_color", "#666666")
+                        ),
+                        line_width=float(
+                            (s.get("style") or {}).get("line_width", s.get("line_width", 1.0))
+                        ),
                         shape_type=s.get("kind"),
                     ),
                     confidence=s["confidence"],
@@ -228,7 +242,9 @@ class CandidateFusionProcessor:
                     editable_strategy=EditableStrategy.NATIVE_TEXT,
                 )
             )
-        connector_source = list(layers.get("connectors", [])) if layers else ctx.candidates.get("connectors", [])
+        connector_source = (
+            list(layers.get("connectors", [])) if layers else ctx.candidates.get("connectors", [])
+        )
         for c in _semantic_connectors(connector_source, shape_candidates, text_candidates, im)[:35]:
             (x1, y1), (x2, y2) = c["points"]
             slide.elements.append(
@@ -308,7 +324,8 @@ def _merge_raw_text_group(source_block: dict, group: list[dict]) -> dict:
         **source_block,
         "text": " ".join(str(item.get("text", "")).strip() for item in group if item.get("text")),
         "bbox": bbox,
-        "confidence": sum(float(item.get("confidence", 0.0)) for item in group) / max(len(group), 1),
+        "confidence": sum(float(item.get("confidence", 0.0)) for item in group)
+        / max(len(group), 1),
         "source_ids": [item.get("id", "text") for item in group],
         "raw_items": group,
     }
@@ -381,7 +398,9 @@ def _text_style_for_block(block: dict, shapes: list[dict]) -> ElementStyle:
             bold = True
         elif container.get("kind") == "roundRect":
             font_color = "#17314d"
-        align = "center" if _bbox_area(bbox) < _bbox_area(container.get("bbox", [])) * 0.35 else "left"
+        align = (
+            "center" if _bbox_area(bbox) < _bbox_area(container.get("bbox", [])) * 0.35 else "left"
+        )
     return ElementStyle(font_size=font_size, bold=bold, font_color=font_color, align=align)
 
 
@@ -417,7 +436,10 @@ def _is_decorative_connector(
         return True
     if any(_overlap_ratio(bbox, block.get("bbox", [])) > 0.25 for block in text_candidates):
         return True
-    if any(_line_near_shape_edge((float(x1), float(y1), float(x2), float(y2)), shape.get("bbox", [])) for shape in shapes):
+    if any(
+        _line_near_shape_edge((float(x1), float(y1), float(x2), float(y2)), shape.get("bbox", []))
+        for shape in shapes
+    ):
         return True
     return False
 
@@ -457,7 +479,9 @@ def _hex_luminance(value: str) -> float:
     return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 
-def _expanded_bbox(bbox: list[float], pad_x: float, pad_y: float, width: int, height: int) -> list[float]:
+def _expanded_bbox(
+    bbox: list[float], pad_x: float, pad_y: float, width: int, height: int
+) -> list[float]:
     if len(bbox) != 4:
         return [0.0, 0.0, 0.0, 0.0]
     return [
@@ -643,7 +667,10 @@ def _smooth_alpha_mask(alpha: Image.Image) -> Image.Image:
 
 
 def _asset_alpha_mask(
-    region: dict, crop_box: tuple[int, int, int, int], image_size: tuple[int, int], crop_size: tuple[int, int]
+    region: dict,
+    crop_box: tuple[int, int, int, int],
+    image_size: tuple[int, int],
+    crop_size: tuple[int, int],
 ) -> tuple[Image.Image | None, str | None]:
     mask = _decode_region_mask(region.get("mask"), image_size)
     if mask is not None:
@@ -653,7 +680,9 @@ def _asset_alpha_mask(
         x1, y1, _x2, _y2 = crop_box
         alpha = Image.new("L", crop_size, 0)
         draw = ImageDraw.Draw(alpha)
-        points = [(float(point[0]) - x1, float(point[1]) - y1) for point in polygon if len(point) >= 2]
+        points = [
+            (float(point[0]) - x1, float(point[1]) - y1) for point in polygon if len(point) >= 2
+        ]
         if len(points) >= 3:
             draw.polygon(points, fill=255)
             return alpha, "polygon"
@@ -690,7 +719,9 @@ def _should_require_rmbg_alpha(kind: str, ctx: PipelineContext | None) -> bool:
         return False
     pipeline_enabled = bool(getattr(ctx.settings.pipeline, "enable_rmbg", True))
     model_config = getattr(ctx.settings.models, "rmbg", {})
-    model_enabled = bool(model_config.get("enabled", True)) if isinstance(model_config, dict) else True
+    model_enabled = (
+        bool(model_config.get("enabled", True)) if isinstance(model_config, dict) else True
+    )
     return pipeline_enabled and model_enabled
 
 

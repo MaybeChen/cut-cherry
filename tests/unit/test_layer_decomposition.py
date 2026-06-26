@@ -58,7 +58,12 @@ def test_layer_decomposition_processor_writes_report(tmp_path):
 def test_build_layers_prefers_sam3_mask_for_visual_assets_and_containers():
     candidates = {
         "layout_regions": [
-            {"id": "coarse", "kind": "image_candidate", "bbox": [90, 90, 510, 230], "confidence": 0.5}
+            {
+                "id": "coarse",
+                "kind": "image_candidate",
+                "bbox": [90, 90, 510, 230],
+                "confidence": 0.5,
+            }
         ],
         "sam3_regions": [
             {
@@ -85,4 +90,7 @@ def test_build_layers_prefers_sam3_mask_for_visual_assets_and_containers():
 
     assert layers["containers"][0]["source"] == "sam3"
     assert layers["containers"][0]["style"]["corner_radius"] > 0
-    assert any(asset["id"] == "sam3_icon" and asset["kind"] == "icon_candidate" for asset in layers["assets"])
+    assert any(
+        asset["id"] == "sam3_icon" and asset["kind"] == "icon_candidate"
+        for asset in layers["assets"]
+    )

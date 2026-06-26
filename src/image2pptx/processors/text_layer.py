@@ -18,12 +18,17 @@ class TextLayerProcessor:
     """
 
     def run(self, ctx: PipelineContext) -> None:
-        blocks = [dict(block) for block in (ctx.candidates.get("text_blocks") or ctx.candidates.get("text", []))]
+        blocks = [
+            dict(block)
+            for block in (ctx.candidates.get("text_blocks") or ctx.candidates.get("text", []))
+        ]
         with Image.open(ctx.artifacts["normalized"]) as image:
             text_layer = build_text_layer(blocks, image.convert("RGB"))
         ctx.candidates["text_layer"] = text_layer
         report_path = ctx.job_dir / "text_layer.json"
-        report_path.write_text(json.dumps(text_layer, ensure_ascii=False, indent=2), encoding="utf-8")
+        report_path.write_text(
+            json.dumps(text_layer, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         ctx.artifacts["text_layer"] = report_path
 
 
@@ -108,7 +113,11 @@ def _luminance(pixel: tuple[int, int, int]) -> float:
 def _dedupe_texts(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     deduped: list[dict[str, Any]] = []
     for block in sorted(blocks, key=lambda item: (item["bbox"][1], item["bbox"][0])):
-        if any(_overlap_ratio(block["bbox"], existing["bbox"]) > 0.92 and block.get("text") == existing.get("text") for existing in deduped):
+        if any(
+            _overlap_ratio(block["bbox"], existing["bbox"]) > 0.92
+            and block.get("text") == existing.get("text")
+            for existing in deduped
+        ):
             continue
         deduped.append(block)
     return deduped

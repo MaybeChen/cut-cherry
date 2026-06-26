@@ -3,6 +3,7 @@ from PIL import Image
 from image2pptx.ir.elements import EditableStrategy, ElementType, Provenance, Rect, SlideElement
 from image2pptx.ir.slide_ir import SlideIR
 
+
 def test_slide_ir_export_load(tmp_path):
     slide = SlideIR(
         width=100,

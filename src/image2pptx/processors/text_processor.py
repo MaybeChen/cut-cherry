@@ -373,11 +373,7 @@ def _is_noisy_ocr_text(text: str, confidence: float) -> bool:
 
 
 def _make_text_block(i: int, text: str, conf: float, pts: Any) -> dict[str, Any]:
-    polygon = (
-        [[float(p[0]), float(p[1])] for p in pts]
-        if pts is not None and len(pts)
-        else []
-    )
+    polygon = [[float(p[0]), float(p[1])] for p in pts] if pts is not None and len(pts) else []
     xs = [p[0] for p in polygon] or [0.0]
     ys = [p[1] for p in polygon] or [0.0]
     normalized = " ".join(text.split())
