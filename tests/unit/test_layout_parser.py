@@ -19,7 +19,8 @@ def test_merge_text_items_preserves_separate_visual_lines():
     assert blocks[1]["text"] == "Second line"
 
 
-def test_layout_parser_adds_text_blocks_and_table_candidate_for_real_grid():
+def test_layout_parser_adds_text_blocks_and_table_candidate_for_real_grid(monkeypatch):
+    monkeypatch.setattr("image2pptx.processors.layout_parser._run_layout_model", lambda ctx: ([], []))
     ctx = SimpleNamespace(
         candidates={
             "text": [
@@ -50,7 +51,8 @@ def test_layout_parser_adds_text_blocks_and_table_candidate_for_real_grid():
     assert table["cells"][0][1]["text"] == "B"
 
 
-def test_layout_parser_does_not_turn_simple_frame_into_table():
+def test_layout_parser_does_not_turn_simple_frame_into_table(monkeypatch):
+    monkeypatch.setattr("image2pptx.processors.layout_parser._run_layout_model", lambda ctx: ([], []))
     ctx = SimpleNamespace(
         candidates={
             "text": [
@@ -82,6 +84,17 @@ def test_layout_model_dependency_error_warning_mentions_paddlex_extra():
 
     assert warning["reason"] == "layout_model_missing_paddlex_extra"
     assert "paddlex[ocr]" in warning["remediation"]
+
+
+def test_layout_model_chart_missing_warning_suggests_disabling_chart_recognition():
+    from image2pptx.processors.layout_parser import _build_layout_model_error_warning
+
+    warning = _build_layout_model_error_warning(
+        RuntimeError("layout_chart_recognition_model_missing: chart_recognition_model")
+    )
+
+    assert warning["reason"] == "layout_chart_recognition_model_missing"
+    assert "use_chart_recognition=false" in warning["remediation"]
 
 
 def test_merge_keeps_rule_icon_when_model_only_reports_overlapping_text() -> None:
@@ -155,3 +168,28 @@ def test_rule_layout_includes_sam3_visual_regions_before_text() -> None:
     regions = _build_rule_layout_regions(ctx, text_blocks)
 
     assert [region["id"] for region in regions] == ["sam3_icon_0", "text_line_0"]
+
+
+def test_merge_keeps_small_sam3_visual_inside_large_model_image() -> None:
+    from image2pptx.processors.layout_parser import _merge_model_and_rule_regions
+
+    model_regions = [
+        {
+            "id": "layout_model_0",
+            "kind": "image_candidate",
+            "bbox": [0, 0, 500, 300],
+            "confidence": 0.8,
+        }
+    ]
+    rule_regions = [
+        {
+            "id": "sam3_icon_0",
+            "kind": "icon_candidate",
+            "bbox": [40, 40, 80, 80],
+            "confidence": 0.7,
+        }
+    ]
+
+    merged = _merge_model_and_rule_regions(model_regions, rule_regions)
+
+    assert [region["id"] for region in merged] == ["layout_model_0", "sam3_icon_0"]

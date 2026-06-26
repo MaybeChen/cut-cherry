@@ -189,3 +189,19 @@ def test_paddle_startup_log_context_suppresses_optional_noise(capsys):
     captured = capsys.readouterr()
     assert "Creating model" not in captured.out
     assert "No ccache" not in captured.err
+
+
+def test_filter_ocr_noise_removes_icon_like_fragments():
+    from image2pptx.processors.text_processor import _filter_ocr_noise
+
+    blocks = [
+        {"id": "text_0", "text": "山", "confidence": 0.83, "bbox": [1, 1, 10, 10]},
+        {"id": "text_1", "text": "K", "confidence": 0.65, "bbox": [1, 1, 10, 10]},
+        {"id": "text_2", "text": "rA", "confidence": 0.49, "bbox": [1, 1, 10, 10]},
+        {"id": "text_3", "text": "Agent roles", "confidence": 0.99, "bbox": [1, 1, 80, 15]},
+    ]
+
+    filtered = _filter_ocr_noise(blocks)
+
+    assert [block["text"] for block in filtered] == ["Agent roles"]
+    assert filtered[0]["id"] == "text_0"
