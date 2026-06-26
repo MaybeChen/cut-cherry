@@ -15,6 +15,8 @@ from image2pptx.processors.chart_processor import ChartProcessor
 from image2pptx.processors.arrow_processor import ArrowProcessor
 from image2pptx.processors.candidate_fusion import CandidateFusionProcessor
 from image2pptx.processors.layer_decomposition import LayerDecompositionProcessor
+from image2pptx.processors.text_layer import TextLayerProcessor
+from image2pptx.processors.vlm_arbitration import VlmArbitrationProcessor
 from image2pptx.renderers.pptx_renderer import PptxRenderer
 
 
@@ -60,6 +62,10 @@ class ImageToPptxPipeline:
             _run_stage(ctx, "layout", "结构化 layout 模型 + 规则区域融合；模型失败时直接中断", LayoutParserProcessor().run)
         else:
             _print_stage_skipped("layout", "settings.pipeline.enable_layout=false")
+        if self.settings.pipeline.enable_text:
+            _run_stage(ctx, "text_layer", "OCR 结果行/角色/样式归一化，形成可编辑 TextLayer", TextLayerProcessor().run)
+        else:
+            _print_stage_skipped("text_layer", "settings.pipeline.enable_text=false")
         if self.settings.pipeline.enable_table:
             _run_stage(ctx, "table", "表格 cell/html 结构归一化；缺失结构时保留候选 bbox", TableProcessor().run)
         else:
@@ -78,6 +84,10 @@ class ImageToPptxPipeline:
             "按 background/container/text/asset/connector 显式分层并建立父子归属",
             LayerDecompositionProcessor().run,
         )
+        if self.settings.pipeline.enable_vlm:
+            _run_stage(ctx, "vlm_arbitration", "OpenAI 兼容 VLM 对分层候选做语义仲裁；失败时直接中断", VlmArbitrationProcessor().run)
+        else:
+            _print_stage_skipped("vlm_arbitration", "settings.pipeline.enable_vlm=false")
         ir = _run_stage(
             ctx,
             "candidate_fusion",

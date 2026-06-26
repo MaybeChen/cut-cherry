@@ -195,8 +195,9 @@ class CandidateFusionProcessor:
                     bbox=Rect(x=x1, y=y1, width=x2 - x1, height=y2 - y1),
                     z_index=10,
                     style=ElementStyle(
-                        fill_color=s.get("fill_color"),
-                        line_color=s.get("line_color", "#666666"),
+                        fill_color=(s.get("style") or {}).get("fill_color", s.get("fill_color")),
+                        line_color=(s.get("style") or {}).get("line_color", s.get("line_color", "#666666")),
+                        line_width=float((s.get("style") or {}).get("line_width", s.get("line_width", 1.0))),
                         shape_type=s.get("kind"),
                     ),
                     confidence=s["confidence"],
@@ -365,11 +366,11 @@ def _synthesize_supporting_cards(
 
 def _text_style_for_block(block: dict, shapes: list[dict]) -> ElementStyle:
     bbox = block.get("bbox", [])
-    font_size = None
+    font_size = block.get("font_size")
     bold = False
-    font_color = "#17233a"
-    align = "left"
-    if block.get("kind") == "title":
+    font_color = block.get("font_color") or "#17233a"
+    align = block.get("align") or "left"
+    if block.get("kind") == "title" or block.get("text_role") == "title":
         font_size = max(18, (bbox[3] - bbox[1]) * 0.55) if len(bbox) == 4 else 18
         bold = True
     container = _best_containing_shape(bbox, shapes)

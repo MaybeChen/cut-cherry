@@ -58,7 +58,7 @@ models:
     score_threshold: 0.35
     epsilon_factor: 0.02
     min_area: 40
-    return_masks: false
+    return_masks: true
     mask_format: rle
   rmbg:
     enabled: true
@@ -66,8 +66,21 @@ models:
   vlm:
     enabled: false
     provider: openai_compatible
+    base_url: https://apigw-cn-south02.huawei.com/api/beta/pangu_s_maas/gtsllm-vl-standard/v1
     endpoint: null
-    model: null
+    model: GTSLLM-VL-Standard
+    timeout: 60
+    temperature: 0
+    max_tokens: 1200
+    x_hw_id: null
+    x_hw_appkey: null
+    headers:
+      X-HW-ID: null
+      X-HW-APPKEY: null
+  formula_ocr:
+    enabled: false
+    engine: pix2text
+    model_dir: models/formula/pix2text
 render:
   slide_size_mode: auto
   default_widescreen_ratio: "16:9"
