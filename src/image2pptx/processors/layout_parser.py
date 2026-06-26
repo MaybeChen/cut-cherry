@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
+from image2pptx.core.errors import PipelineStageError, format_stage_failure
 from image2pptx.models.layout import LayoutModelAdapter
 from image2pptx.pipeline.context import PipelineContext
 
@@ -29,6 +30,8 @@ class LayoutParserProcessor:
         ctx.candidates["layout_regions"] = layout_regions
         if model_warnings:
             ctx.candidates["layout_warnings"] = model_warnings
+            _write_layout_report(ctx, model_regions, layout_regions, model_warnings)
+            raise PipelineStageError(format_stage_failure("layout", model_warnings))
         _write_layout_report(ctx, model_regions, layout_regions, model_warnings)
 
 
@@ -54,6 +57,15 @@ def _build_layout_model_error_warning(exc: BaseException) -> dict[str, str]:
                 '`poetry run pip install "paddlex[ocr]"`.'
             ),
         }
+    if "layout_chart_recognition_model_missing" in message or "chart_recognition_model" in message:
+        return {
+            "reason": "layout_chart_recognition_model_missing",
+            "message": message,
+            "remediation": (
+                "Set models.layout.use_chart_recognition=false, or regenerate the "
+                "PP-StructureV3/PaddleX YAML with chart recognition assets."
+            ),
+        }
     return {"reason": "layout_model_inference_failed", "message": message}
 
 
@@ -67,7 +79,7 @@ def _build_rule_layout_regions(ctx: PipelineContext, text_blocks: list[dict]) ->
         )
     )
     image_regions.extend(
-        _detect_raster_icon_candidates(ctx, visual_suppression_blocks, slide_size, image_regions)
+        _detect_raster_visual_candidates(ctx, visual_suppression_blocks, slide_size, image_regions)
     )
     table_regions = _detect_table_candidates(ctx.candidates.get("lines", []), text_blocks)
     return image_regions + table_regions + [dict(block) for block in text_blocks]
@@ -91,6 +103,14 @@ def _should_drop_rule_region(rule_region: dict, model_region: dict) -> bool:
         return False
     if _is_visual_region(rule_region) and not _is_visual_region(model_region):
         return False
+    if _is_visual_region(rule_region) and _is_visual_region(model_region):
+        # PP-Structure/PaddleOCR-VL may label a whole diagram/slide section as a
+        # single image.  Do not let that coarse container erase smaller SAM3/rule
+        # visual proposals that can become editable/native pieces later.
+        rule_area = _bbox_area(rule_region["bbox"])
+        model_area = _bbox_area(model_region["bbox"])
+        if rule_area > 0 and model_area >= rule_area * 4:
+            return False
     return True
 
 
@@ -123,18 +143,32 @@ def _write_layout_report(
     report = {
         "job_id": ctx.job_id,
         "engine": ctx.settings.models.layout.get("engine", "rules"),
-        "status": "succeeded" if model_regions else "fallback_rules",
+        "status": "succeeded" if model_regions else "empty",
         "model_count": len(model_regions),
         "count": len(layout_regions),
+        "kind_counts": _count_kinds(layout_regions),
         "warnings": warnings,
         "items": layout_regions,
     }
-    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    report_path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, default=_layout_report_json_default),
+        encoding="utf-8",
+    )
     ctx.artifacts["layout_results"] = report_path
 
 
-class TODOProcessor(LayoutParserProcessor):
-    """Backward-compatible alias for the old extension-point class name."""
+def _layout_report_json_default(value: Any) -> str:
+    if isinstance(value, Image.Image):
+        return f"<PIL.Image mode={value.mode} size={value.size}>"
+    return repr(value)
+
+
+def _count_kinds(regions: list[dict]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for region in regions:
+        kind = str(region.get("kind", "unknown"))
+        counts[kind] = counts.get(kind, 0) + 1
+    return counts
 
 
 def _merge_text_into_blocks(text_items: list[dict]) -> list[dict]:
@@ -331,7 +365,7 @@ def _detect_image_candidates(
     return regions
 
 
-def _detect_raster_icon_candidates(
+def _detect_raster_visual_candidates(
     ctx: PipelineContext,
     text_blocks: list[dict],
     slide_size: tuple[int, int] | None,
@@ -354,18 +388,31 @@ def _detect_raster_icon_candidates(
             continue
         if any(_overlap_ratio(bbox, region["bbox"]) > 0.5 for region in occupied_regions):
             continue
-        if not _looks_like_icon(bbox, slide_size, component["area"]):
+        kind = _classify_raster_visual_component(bbox, slide_size, component["area"])
+        if kind is None:
             continue
         region = {
-            "id": f"icon_candidate_{len(regions)}",
-            "kind": "icon_candidate",
+            "id": f"{kind}_{len(regions)}",
+            "kind": kind,
             "bbox": bbox,
-            "confidence": 0.5,
+            "confidence": 0.5 if kind == "icon_candidate" else 0.52,
             "source_ids": ["raster_foreground"],
         }
         regions.append(region)
         occupied_regions.append(region)
     return regions
+
+
+def _detect_raster_icon_candidates(
+    ctx: PipelineContext,
+    text_blocks: list[dict],
+    slide_size: tuple[int, int] | None,
+    existing_image_regions: list[dict] | None = None,
+) -> list[dict]:
+    """Backward-compatible alias for older tests/callers."""
+    return _detect_raster_visual_candidates(
+        ctx, text_blocks, slide_size, existing_image_regions
+    )
 
 
 def _find_foreground_components(image: Image.Image) -> list[dict]:
@@ -508,6 +555,31 @@ def _looks_like_icon(bbox: list[float], slide_size: tuple[int, int], area: float
     return 0.00008 <= area_ratio <= 0.035 and fill_ratio >= 0.06
 
 
+def _classify_raster_visual_component(
+    bbox: list[float], slide_size: tuple[int, int], area: float
+) -> str | None:
+    if _looks_like_icon(bbox, slide_size, area):
+        return "icon_candidate"
+    if _looks_like_logo(bbox, slide_size):
+        return "logo_candidate"
+    width, height = slide_size
+    x1, y1, x2, y2 = bbox
+    box_w = max(0.0, x2 - x1)
+    box_h = max(0.0, y2 - y1)
+    if box_w < 24 or box_h < 24:
+        return None
+    if box_w > width * 0.82 or box_h > height * 0.82:
+        return None
+    aspect = box_w / max(box_h, 1.0)
+    if aspect < 0.18 or aspect > 5.5:
+        return None
+    area_ratio = (box_w * box_h) / max(width * height, 1)
+    fill_ratio = area / max(box_w * box_h, 1.0)
+    if 0.006 <= area_ratio <= 0.42 and fill_ratio >= 0.04:
+        return "image_candidate"
+    return None
+
+
 def _get_slide_size(ctx: PipelineContext) -> tuple[int, int] | None:
     normalized = getattr(ctx, "artifacts", {}).get("normalized")
     if not normalized:
@@ -601,5 +673,9 @@ def _average_confidence(items: list[dict]) -> float:
 def _overlap_ratio(a: list[float], b: list[float]) -> float:
     ix1, iy1, ix2, iy2 = max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])
     inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
-    area = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1])
+    area = _bbox_area(a)
     return inter / area if area else 0.0
+
+
+def _bbox_area(bbox: list[float]) -> float:
+    return max(0.0, bbox[2] - bbox[0]) * max(0.0, bbox[3] - bbox[1])

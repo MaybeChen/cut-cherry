@@ -31,10 +31,6 @@ class ChartProcessor:
         ctx.candidates["charts"] = charts
 
 
-class TODOProcessor(ChartProcessor):
-    """Backward-compatible alias for the old extension-point class name."""
-
-
 def _normalize_bar(shape: dict) -> dict | None:
     bbox = shape.get("bbox")
     if not bbox or len(bbox) != 4:

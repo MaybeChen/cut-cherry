@@ -34,10 +34,6 @@ class FormulaProcessor:
         ctx.candidates["formulas"] = formulas
 
 
-class TODOProcessor(FormulaProcessor):
-    """Backward-compatible alias for the old extension-point class name."""
-
-
 def _looks_like_formula(text: str) -> bool:
     compact = "".join(text.split())
     if len(compact) < 3:

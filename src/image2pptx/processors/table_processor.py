@@ -27,10 +27,6 @@ class TableProcessor:
         ctx.candidates["layout_regions"] = regions
 
 
-class TODOProcessor(TableProcessor):
-    """Backward-compatible alias for the old extension-point class name."""
-
-
 def _extract_cells(region: dict[str, Any]) -> list[list[dict[str, Any]]]:
     raw = region.get("raw") if isinstance(region.get("raw"), dict) else region
     explicit = _find_explicit_cells(raw)
