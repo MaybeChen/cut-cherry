@@ -95,7 +95,9 @@ def test_normalize_sam3_result_accepts_edit_banana_results_schema() -> None:
 
 
 def test_normalize_sam3_result_derives_bbox_from_polygon() -> None:
-    regions = normalize_sam3_result({"results": [{"prompt": "figure", "polygon": [[4, 8], [9, 3]]}]})
+    regions = normalize_sam3_result(
+        {"results": [{"prompt": "figure", "polygon": [[4, 8], [9, 3]]}]}
+    )
 
     assert regions[0]["bbox"] == [4.0, 3.0, 9.0, 8.0]
     assert regions[0]["kind"] == "image_candidate"
@@ -128,11 +130,16 @@ def test_sam3_adapter_reports_missing_configured_assets(tmp_path) -> None:
     ).infer(image)
 
     assert regions == []
-    assert [warning["reason"] for warning in warnings] == ["sam3_asset_missing", "sam3_asset_missing"]
+    assert [warning["reason"] for warning in warnings] == [
+        "sam3_asset_missing",
+        "sam3_asset_missing",
+    ]
     assert warnings[0]["key"] == "model_path"
 
 
-def test_sam3_adapter_reports_missing_runtime_modules_before_runtime_init(tmp_path, monkeypatch) -> None:
+def test_sam3_adapter_reports_missing_runtime_modules_before_runtime_init(
+    tmp_path, monkeypatch
+) -> None:
     image = tmp_path / "normalized.png"
     image.write_bytes(b"fake")
     model_path = tmp_path / "models" / "sam3.pt"
@@ -169,8 +176,13 @@ def test_sam3_adapter_reports_missing_runtime_modules_before_runtime_init(tmp_pa
 
 def test_sam3_image_processor_import_suppresses_cpu_optional_warnings(monkeypatch) -> None:
     def fake_import_module(name: str):
-        warnings.warn("CUDA is not available or torch_xla is imported. Disabling autocast.", UserWarning)
-        warnings.warn("Importing from timm.models.layers is deprecated, please import via timm.layers", FutureWarning)
+        warnings.warn(
+            "CUDA is not available or torch_xla is imported. Disabling autocast.", UserWarning
+        )
+        warnings.warn(
+            "Importing from timm.models.layers is deprecated, please import via timm.layers",
+            FutureWarning,
+        )
         return SimpleNamespace(name=name)
 
     monkeypatch.setattr(sam3_model.importlib, "import_module", fake_import_module)

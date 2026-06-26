@@ -22,13 +22,22 @@ class VlmArbitrationProcessor:
     def run(self, ctx: PipelineContext) -> None:
         config = getattr(ctx.settings.models, "vlm", {})
         adapter = self.adapter or VlmAdapter(config)
-        layers = ctx.candidates.get("layers") if isinstance(ctx.candidates.get("layers"), dict) else {}
+        layers = (
+            ctx.candidates.get("layers") if isinstance(ctx.candidates.get("layers"), dict) else {}
+        )
         if not layers:
-            warnings = [{"reason": "vlm_missing_layers", "message": "Layer decomposition must run before VLM arbitration."}]
+            warnings = [
+                {
+                    "reason": "vlm_missing_layers",
+                    "message": "Layer decomposition must run before VLM arbitration.",
+                }
+            ]
             ctx.candidates["vlm_warnings"] = warnings
             raise PipelineStageError(format_stage_failure("vlm", warnings))
         prompt = _build_vlm_prompt(layers)
-        result, warnings = adapter.infer_json(prompt, max_tokens=int(config.get("max_tokens", 1200)))
+        result, warnings = adapter.infer_json(
+            prompt, max_tokens=int(config.get("max_tokens", 1200))
+        )
         if warnings:
             ctx.candidates["vlm_warnings"] = warnings
             _write_vlm_report(ctx, status="failed", result=None, warnings=warnings)
@@ -113,10 +122,14 @@ def apply_vlm_arbitration(layers: dict[str, Any], result: dict[str, Any]) -> Non
                     item[key] = style[key]
     for bucket in ("containers", "texts", "assets", "connectors"):
         layers[bucket] = [item for item in layers.get(bucket, []) if item.get("keep", True)]
-    layers["counts"] = {key: len(layers.get(key, [])) for key in ("containers", "texts", "assets", "connectors")}
+    layers["counts"] = {
+        key: len(layers.get(key, [])) for key in ("containers", "texts", "assets", "connectors")
+    }
 
 
-def _write_vlm_report(ctx: PipelineContext, status: str, result: dict[str, Any] | None, warnings: list[dict[str, Any]]) -> None:
+def _write_vlm_report(
+    ctx: PipelineContext, status: str, result: dict[str, Any] | None, warnings: list[dict[str, Any]]
+) -> None:
     report_path = ctx.job_dir / "vlm_arbitration.json"
     report = {"job_id": ctx.job_id, "status": status, "warnings": warnings, "result": result or {}}
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

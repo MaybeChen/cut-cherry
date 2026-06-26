@@ -354,7 +354,17 @@ def _redirect_cuda_allocations_when_cpu_only(torch: Any, device: str):
     if device != "cpu" or torch.cuda.is_available():
         yield
         return
-    factory_names = ("arange", "empty", "full", "linspace", "ones", "rand", "randn", "tensor", "zeros")
+    factory_names = (
+        "arange",
+        "empty",
+        "full",
+        "linspace",
+        "ones",
+        "rand",
+        "randn",
+        "tensor",
+        "zeros",
+    )
     originals = {name: getattr(torch, name) for name in factory_names}
     original_pin_memory = torch.Tensor.pin_memory
 

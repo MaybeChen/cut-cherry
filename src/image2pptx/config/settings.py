@@ -35,7 +35,9 @@ class ModelSettings(BaseModel):
     sam3: dict[str, Any] = Field(default_factory=lambda: {"enabled": True})
     rmbg: dict[str, Any] = Field(default_factory=lambda: {"enabled": True})
     vlm: dict[str, Any] = Field(default_factory=lambda: {"enabled": False})
-    formula_ocr: dict[str, Any] = Field(default_factory=lambda: {"enabled": False, "engine": "pix2text"})
+    formula_ocr: dict[str, Any] = Field(
+        default_factory=lambda: {"enabled": False, "engine": "pix2text"}
+    )
 
 
 class RenderSettings(BaseModel):

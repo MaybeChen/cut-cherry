@@ -8,20 +8,51 @@ from pydantic import BaseModel, Field
 
 
 class ElementType(StrEnum):
-    BACKGROUND = "background"; SHAPE = "shape"; TEXT = "text"; RICH_TEXT = "rich_text"; FORMULA = "formula"; IMAGE = "image"; ICON = "icon"; LOGO = "logo"; CHART = "chart"; TABLE = "table"; CONNECTOR = "connector"; GROUP = "group"; DECORATION = "decoration"; UNKNOWN_PATCH = "unknown_patch"
+    BACKGROUND = "background"
+    SHAPE = "shape"
+    TEXT = "text"
+    RICH_TEXT = "rich_text"
+    FORMULA = "formula"
+    IMAGE = "image"
+    ICON = "icon"
+    LOGO = "logo"
+    CHART = "chart"
+    TABLE = "table"
+    CONNECTOR = "connector"
+    GROUP = "group"
+    DECORATION = "decoration"
+    UNKNOWN_PATCH = "unknown_patch"
 
 
 class EditableStrategy(StrEnum):
-    NATIVE_SHAPE = "native_shape"; NATIVE_TEXT = "native_text"; NATIVE_TABLE = "native_table"; NATIVE_CHART = "native_chart"; NATIVE_CONNECTOR = "native_connector"; OFFICE_MATH = "office_math"; SVG_ASSET = "svg_asset"; TRANSPARENT_PNG = "transparent_png"; RASTER_IMAGE = "raster_image"; RESIDUAL_PATCH = "residual_patch"
+    NATIVE_SHAPE = "native_shape"
+    NATIVE_TEXT = "native_text"
+    NATIVE_TABLE = "native_table"
+    NATIVE_CHART = "native_chart"
+    NATIVE_CONNECTOR = "native_connector"
+    OFFICE_MATH = "office_math"
+    SVG_ASSET = "svg_asset"
+    TRANSPARENT_PNG = "transparent_png"
+    RASTER_IMAGE = "raster_image"
+    RESIDUAL_PATCH = "residual_patch"
 
 
 class Rect(BaseModel):
-    x: float; y: float; width: float; height: float
+    x: float
+    y: float
+    width: float
+    height: float
+
     @property
-    def x2(self) -> float: return self.x + self.width
+    def x2(self) -> float:
+        return self.x + self.width
+
     @property
-    def y2(self) -> float: return self.y + self.height
-    def area(self) -> float: return max(0.0, self.width) * max(0.0, self.height)
+    def y2(self) -> float:
+        return self.y + self.height
+
+    def area(self) -> float:
+        return max(0.0, self.width) * max(0.0, self.height)
 
 
 class Provenance(BaseModel):
