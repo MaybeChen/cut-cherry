@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
+from image2pptx.core.errors import PipelineStageError, format_stage_failure
 from image2pptx.models.layout import LayoutModelAdapter
 from image2pptx.pipeline.context import PipelineContext
 
@@ -29,6 +30,8 @@ class LayoutParserProcessor:
         ctx.candidates["layout_regions"] = layout_regions
         if model_warnings:
             ctx.candidates["layout_warnings"] = model_warnings
+            _write_layout_report(ctx, model_regions, layout_regions, model_warnings)
+            raise PipelineStageError(format_stage_failure("layout", model_warnings))
         _write_layout_report(ctx, model_regions, layout_regions, model_warnings)
 
 
@@ -67,7 +70,7 @@ def _build_rule_layout_regions(ctx: PipelineContext, text_blocks: list[dict]) ->
         )
     )
     image_regions.extend(
-        _detect_raster_icon_candidates(ctx, visual_suppression_blocks, slide_size, image_regions)
+        _detect_raster_visual_candidates(ctx, visual_suppression_blocks, slide_size, image_regions)
     )
     table_regions = _detect_table_candidates(ctx.candidates.get("lines", []), text_blocks)
     return image_regions + table_regions + [dict(block) for block in text_blocks]
@@ -123,14 +126,23 @@ def _write_layout_report(
     report = {
         "job_id": ctx.job_id,
         "engine": ctx.settings.models.layout.get("engine", "rules"),
-        "status": "succeeded" if model_regions else "fallback_rules",
+        "status": "succeeded" if model_regions else "empty",
         "model_count": len(model_regions),
         "count": len(layout_regions),
+        "kind_counts": _count_kinds(layout_regions),
         "warnings": warnings,
         "items": layout_regions,
     }
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     ctx.artifacts["layout_results"] = report_path
+
+
+def _count_kinds(regions: list[dict]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for region in regions:
+        kind = str(region.get("kind", "unknown"))
+        counts[kind] = counts.get(kind, 0) + 1
+    return counts
 
 
 class TODOProcessor(LayoutParserProcessor):
@@ -331,7 +343,7 @@ def _detect_image_candidates(
     return regions
 
 
-def _detect_raster_icon_candidates(
+def _detect_raster_visual_candidates(
     ctx: PipelineContext,
     text_blocks: list[dict],
     slide_size: tuple[int, int] | None,
@@ -354,18 +366,31 @@ def _detect_raster_icon_candidates(
             continue
         if any(_overlap_ratio(bbox, region["bbox"]) > 0.5 for region in occupied_regions):
             continue
-        if not _looks_like_icon(bbox, slide_size, component["area"]):
+        kind = _classify_raster_visual_component(bbox, slide_size, component["area"])
+        if kind is None:
             continue
         region = {
-            "id": f"icon_candidate_{len(regions)}",
-            "kind": "icon_candidate",
+            "id": f"{kind}_{len(regions)}",
+            "kind": kind,
             "bbox": bbox,
-            "confidence": 0.5,
+            "confidence": 0.5 if kind == "icon_candidate" else 0.52,
             "source_ids": ["raster_foreground"],
         }
         regions.append(region)
         occupied_regions.append(region)
     return regions
+
+
+def _detect_raster_icon_candidates(
+    ctx: PipelineContext,
+    text_blocks: list[dict],
+    slide_size: tuple[int, int] | None,
+    existing_image_regions: list[dict] | None = None,
+) -> list[dict]:
+    """Backward-compatible alias for older tests/callers."""
+    return _detect_raster_visual_candidates(
+        ctx, text_blocks, slide_size, existing_image_regions
+    )
 
 
 def _find_foreground_components(image: Image.Image) -> list[dict]:
@@ -506,6 +531,31 @@ def _looks_like_icon(bbox: list[float], slide_size: tuple[int, int], area: float
     area_ratio = (box_w * box_h) / max(width * height, 1)
     fill_ratio = area / max(box_w * box_h, 1.0)
     return 0.00008 <= area_ratio <= 0.035 and fill_ratio >= 0.06
+
+
+def _classify_raster_visual_component(
+    bbox: list[float], slide_size: tuple[int, int], area: float
+) -> str | None:
+    if _looks_like_icon(bbox, slide_size, area):
+        return "icon_candidate"
+    if _looks_like_logo(bbox, slide_size):
+        return "logo_candidate"
+    width, height = slide_size
+    x1, y1, x2, y2 = bbox
+    box_w = max(0.0, x2 - x1)
+    box_h = max(0.0, y2 - y1)
+    if box_w < 24 or box_h < 24:
+        return None
+    if box_w > width * 0.82 or box_h > height * 0.82:
+        return None
+    aspect = box_w / max(box_h, 1.0)
+    if aspect < 0.18 or aspect > 5.5:
+        return None
+    area_ratio = (box_w * box_h) / max(width * height, 1)
+    fill_ratio = area / max(box_w * box_h, 1.0)
+    if 0.006 <= area_ratio <= 0.42 and fill_ratio >= 0.04:
+        return "image_candidate"
+    return None
 
 
 def _get_slide_size(ctx: PipelineContext) -> tuple[int, int] | None:
