@@ -57,6 +57,43 @@ def test_layout_adapter_uses_ppstructurev3_predict(monkeypatch, tmp_path):
     assert regions[0]["text"] == "Title"
 
 
+def test_layout_adapter_does_not_pass_layout_model_dir_with_paddlex_config(monkeypatch, tmp_path):
+    calls = []
+
+    class FakePPStructureV3:
+        def __init__(self, **kwargs):
+            calls.append(kwargs)
+            if "layout_model_dir" in kwargs:
+                raise ValueError("Unknown argument: layout_model_dir")
+
+        def predict(self, input, **kwargs):
+            return [{"label": "title", "bbox": [10, 10, 80, 30], "score": 0.88}]
+
+    fake_module = SimpleNamespace(PPStructureV3=FakePPStructureV3)
+    monkeypatch.setattr(layout_model.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(layout_model.importlib, "import_module", lambda name: fake_module)
+    config_path = tmp_path / "PP-StructureV3.yaml"
+    config_path.write_text("pipeline: PP-StructureV3\n", encoding="utf-8")
+    image = tmp_path / "page.png"
+    image.write_bytes(b"fake")
+
+    adapter = LayoutModelAdapter(
+        {
+            "engine": "pp_structure_v3",
+            "allow_auto_download": False,
+            "paddlex_config": str(config_path),
+            "layout_model_dir": str(tmp_path / "legacy_layout_model_dir"),
+        },
+        "cpu",
+    )
+    regions, warnings = adapter.infer(image)
+
+    assert warnings == []
+    assert regions[0]["kind"] == "title"
+    assert "layout_model_dir" not in calls[0]
+    assert calls[0]["paddlex_config"] == str(config_path)
+
+
 def test_layout_parser_writes_model_report_and_merges_rules(tmp_path, monkeypatch):
     normalized = tmp_path / "normalized.png"
     normalized.write_bytes(b"fake")

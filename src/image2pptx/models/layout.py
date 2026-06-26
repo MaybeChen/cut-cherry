@@ -114,9 +114,13 @@ def _build_common_kwargs(config: dict[str, Any], device: str) -> dict[str, Any]:
     kwargs: dict[str, Any] = {}
     if config.get("paddlex_config"):
         kwargs["paddlex_config"] = str(config["paddlex_config"])
-    if config.get("model_dir"):
+    # PaddleOCR 3.x PPStructureV3 accepts a PaddleX pipeline YAML via
+    # paddlex_config.  Passing legacy model-dir kwargs together with that YAML
+    # raises errors such as "Unknown argument: layout_model_dir"; the model
+    # paths should be expressed inside the exported YAML instead.
+    elif config.get("model_dir"):
         kwargs["model_dir"] = str(config["model_dir"])
-    if config.get("layout_model_dir"):
+    if not config.get("paddlex_config") and config.get("layout_model_dir"):
         kwargs["layout_model_dir"] = str(config["layout_model_dir"])
     kwargs["device"] = "gpu" if device == "cuda" else "cpu"
     return kwargs
