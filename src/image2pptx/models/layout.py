@@ -279,7 +279,9 @@ def _normalize_kind(label: str) -> str:
         return "logo_candidate"
     if "icon" in label or "图标" in label:
         return "icon_candidate"
-    if any(token in label for token in ("image", "figure", "picture", "photo", "pic", "图片", "插图")):
+    if any(
+        token in label for token in ("image", "figure", "picture", "photo", "pic", "图片", "插图")
+    ):
         return "image_candidate"
     if "title" in label or "标题" in label:
         return "title"

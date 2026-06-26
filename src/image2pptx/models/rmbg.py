@@ -49,7 +49,9 @@ class RmbgAdapter:
             providers = ["CPUExecutionProvider"]
             if self.device == "cuda" and "CUDAExecutionProvider" in ort.get_available_providers():
                 providers.insert(0, "CUDAExecutionProvider")
-            self._session = ort.InferenceSession(str(self.config["model_path"]), providers=providers)
+            self._session = ort.InferenceSession(
+                str(self.config["model_path"]), providers=providers
+            )
         return self._session
 
 

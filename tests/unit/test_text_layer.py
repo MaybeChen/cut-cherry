@@ -24,7 +24,9 @@ def test_text_layer_processor_writes_report(tmp_path):
     ctx = SimpleNamespace(
         job_dir=tmp_path,
         artifacts={"normalized": normalized},
-        candidates={"text": [{"id": "t", "text": "Label", "bbox": [5, 5, 40, 16], "confidence": 0.9}]},
+        candidates={
+            "text": [{"id": "t", "text": "Label", "bbox": [5, 5, 40, 16], "confidence": 0.9}]
+        },
     )
 
     TextLayerProcessor().run(ctx)

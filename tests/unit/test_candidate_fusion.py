@@ -576,8 +576,18 @@ def test_candidate_fusion_splits_wide_ocr_line_into_layout_pieces(tmp_path):
                     "bbox": [100, 100, 390, 120],
                     "confidence": 0.95,
                     "raw_items": [
-                        {"id": "text_0", "text": "Agent roles", "bbox": [100, 100, 170, 120], "confidence": 0.95},
-                        {"id": "text_1", "text": "Skill contracts", "bbox": [300, 100, 390, 120], "confidence": 0.95},
+                        {
+                            "id": "text_0",
+                            "text": "Agent roles",
+                            "bbox": [100, 100, 170, 120],
+                            "confidence": 0.95,
+                        },
+                        {
+                            "id": "text_1",
+                            "text": "Skill contracts",
+                            "bbox": [300, 100, 390, 120],
+                            "confidence": 0.95,
+                        },
                     ],
                 }
             ],

@@ -46,7 +46,9 @@ def _detect_shapes(img: np.ndarray, edges: np.ndarray, width: int, height: int) 
             continue
         crop = img[y : y + bh, x : x + bw]
         fill_color = _representative_fill_color(crop)
-        shape_type = "roundRect" if _looks_like_card(bbox, (width, height), area_ratio) else "rectangle"
+        shape_type = (
+            "roundRect" if _looks_like_card(bbox, (width, height), area_ratio) else "rectangle"
+        )
         shapes.append(
             {
                 "id": f"shape_{len(shapes)}",
@@ -73,13 +75,17 @@ def _detect_lines(edges: np.ndarray, shapes: list[dict], width: int, height: int
         x1, y1, x2, y2 = map(int, candidate[0])
         if _should_drop_line((x1, y1, x2, y2), shapes, width, height):
             continue
-        lines.append({"id": f"line_{len(lines)}", "points": [[x1, y1], [x2, y2]], "confidence": 0.6})
+        lines.append(
+            {"id": f"line_{len(lines)}", "points": [[x1, y1], [x2, y2]], "confidence": 0.6}
+        )
         if len(lines) >= 60:
             break
     return lines
 
 
-def _should_drop_line(line: tuple[int, int, int, int], shapes: list[dict], width: int, height: int) -> bool:
+def _should_drop_line(
+    line: tuple[int, int, int, int], shapes: list[dict], width: int, height: int
+) -> bool:
     x1, y1, x2, y2 = line
     dx = abs(x2 - x1)
     dy = abs(y2 - y1)
@@ -93,12 +99,16 @@ def _should_drop_line(line: tuple[int, int, int, int], shapes: list[dict], width
     if near_horizontal and dx >= width * 0.12:
         if min(y1, y2) <= 8 or max(y1, y2) >= height - 8:
             return True
-        if any(_line_matches_shape_edge(line, shape.get("bbox", []), "horizontal") for shape in shapes):
+        if any(
+            _line_matches_shape_edge(line, shape.get("bbox", []), "horizontal") for shape in shapes
+        ):
             return True
     if near_vertical and dy >= height * 0.12:
         if min(x1, x2) <= 8 or max(x1, x2) >= width - 8:
             return True
-        if any(_line_matches_shape_edge(line, shape.get("bbox", []), "vertical") for shape in shapes):
+        if any(
+            _line_matches_shape_edge(line, shape.get("bbox", []), "vertical") for shape in shapes
+        ):
             return True
     # Long perfectly axis-aligned strokes without an arrow head are usually
     # container separators in these slides, not connectors.
@@ -107,7 +117,9 @@ def _should_drop_line(line: tuple[int, int, int, int], shapes: list[dict], width
     return False
 
 
-def _line_matches_shape_edge(line: tuple[int, int, int, int], bbox: list[float], orientation: str) -> bool:
+def _line_matches_shape_edge(
+    line: tuple[int, int, int, int], bbox: list[float], orientation: str
+) -> bool:
     if len(bbox) != 4:
         return False
     x1, y1, x2, y2 = line
