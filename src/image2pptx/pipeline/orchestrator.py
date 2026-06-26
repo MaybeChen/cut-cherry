@@ -44,19 +44,19 @@ class ImageToPptxPipeline:
         _run_stage(ctx, "preprocess", "规范化输入、生成灰度/边缘/颜色空间等中间产物", PreprocessProcessor().run)
         if self.settings.pipeline.enable_geometry:
             _run_stage(ctx, "geometry", "OpenCV 轮廓/矩形/线段候选提取", GeometryProcessor().run)
-            _run_stage(ctx, "arrow", "Hough 线段转基础 connector；箭头头部暂降级为 None", ArrowProcessor().run)
+            _run_stage(ctx, "arrow", "Hough 线段转基础 connector；箭头头部识别失败将直接报错", ArrowProcessor().run)
         else:
             _print_stage_skipped("geometry+arrow", "settings.pipeline.enable_geometry=false")
         if self.settings.pipeline.enable_sam3:
-            _run_stage(ctx, "sam3", "SAM3 endpoint/local runtime 视觉候选；失败时降级为空候选", Sam3Processor().run)
+            _run_stage(ctx, "sam3", "SAM3 endpoint/local runtime 视觉候选；失败时直接中断并打印原因", Sam3Processor().run)
         else:
             _print_stage_skipped("sam3", "settings.pipeline.enable_sam3=false")
         if self.settings.pipeline.enable_text:
-            _run_stage(ctx, "text", "OCR 文本识别；不可用时降级为空文本候选", TextProcessor().run)
+            _run_stage(ctx, "text", "OCR 文本识别；失败时直接中断并打印原因", TextProcessor().run)
         else:
             _print_stage_skipped("text", "settings.pipeline.enable_text=false")
         if self.settings.pipeline.enable_layout:
-            _run_stage(ctx, "layout", "结构化 layout 模型 + 规则 fallback 融合", LayoutParserProcessor().run)
+            _run_stage(ctx, "layout", "结构化 layout 模型 + 规则区域融合；模型失败时直接中断", LayoutParserProcessor().run)
         else:
             _print_stage_skipped("layout", "settings.pipeline.enable_layout=false")
         if self.settings.pipeline.enable_table:
@@ -64,11 +64,11 @@ class ImageToPptxPipeline:
         else:
             _print_stage_skipped("table", "settings.pipeline.enable_table=false")
         if self.settings.pipeline.enable_formula:
-            _run_stage(ctx, "formula", "公式样式 OCR 文本检测；不可识别时降级为空公式候选", FormulaProcessor().run)
+            _run_stage(ctx, "formula", "公式样式 OCR 文本检测", FormulaProcessor().run)
         else:
             _print_stage_skipped("formula", "settings.pipeline.enable_formula=false")
         if self.settings.pipeline.enable_chart:
-            _run_stage(ctx, "chart", "简单柱状图候选检测；复杂图表后续降级为图片资产", ChartProcessor().run)
+            _run_stage(ctx, "chart", "简单柱状图候选检测", ChartProcessor().run)
         else:
             _print_stage_skipped("chart", "settings.pipeline.enable_chart=false")
         ir = _run_stage(
@@ -82,7 +82,7 @@ class ImageToPptxPipeline:
         pptx = _run_stage(
             ctx,
             "pptx_render",
-            "python-pptx 渲染 result.pptx；高级 OOXML 暂走基础渲染 fallback",
+            "python-pptx 渲染 result.pptx",
             lambda _ctx: PptxRenderer().render(ir, job_dir / "result.pptx"),
         )
         _print_chain_footer(job_id, pptx, ir_path)
@@ -125,7 +125,7 @@ def _run_stage(ctx: PipelineContext, name: str, description: str, func):
         result = func(ctx)
     except Exception as exc:
         print(f"[image2pptx][chain][{name}] FAILED error={type(exc).__name__}: {exc}")
-        print(f"[image2pptx][chain][{name}] fallback=none; unexpected fatal error will be raised")
+        print(f"[image2pptx][chain][{name}] aborted=true")
         raise
     after = _snapshot_ctx(ctx)
     print(f"[image2pptx][chain][{name}] SUCCESS")
@@ -187,7 +187,7 @@ def _summarize_degradation(ctx: PipelineContext, name: str) -> list[str]:
         details = _warning_details(warnings)
         suffix = f" details={details}" if details else ""
         lines.append(f"warnings={key}:{len(warnings)} reasons={reasons}{suffix}")
-        lines.append(f"fallback={_fallback_for_warning_key(key)}")
+        lines.append("aborted=true")
     return lines
 
 
@@ -206,10 +206,3 @@ def _shorten_warning_detail(value: str, limit: int = 180) -> str:
     value = " ".join(value.split())
     return value if len(value) <= limit else value[: limit - 3] + "..."
 
-
-def _fallback_for_warning_key(key: str) -> str:
-    return {
-        "sam3_warnings": "skip SAM3 proposals; continue with layout model/rules and raster visual fallback",
-        "layout_warnings": "use rule-based OCR/OpenCV/SAM3 layout regions",
-        "rmbg_warnings": "use SAM3/polygon alpha if present, otherwise background-color alpha or bbox crop",
-    }.get(key, "continue with available candidates")

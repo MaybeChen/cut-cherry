@@ -1,8 +1,8 @@
 """Optional RMBG adapter for alpha-mask generation.
 
 The adapter is lazy/offline-safe.  If an ONNX model and onnxruntime are
-available it attempts a generic image-to-alpha inference path; callers can
-fallback to heuristic background removal when the runtime is unavailable.
+available it attempts a generic image-to-alpha inference path; callers should
+raise a stage error when the runtime is unavailable.
 """
 
 from __future__ import annotations

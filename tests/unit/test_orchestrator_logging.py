@@ -22,4 +22,4 @@ def test_summarize_degradation_includes_warning_details() -> None:
 
     assert "sam3_asset_missing" in lines[0]
     assert "models/sam3/sam3.pt" in lines[0]
-    assert lines[1].startswith("fallback=")
+    assert lines[1] == "aborted=true"

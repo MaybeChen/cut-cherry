@@ -16,6 +16,7 @@ from image2pptx.ir.elements import (
 )
 from image2pptx.ir.slide_ir import SlideIR
 from image2pptx.models.rmbg import RmbgAdapter
+from image2pptx.core.errors import PipelineStageError, format_stage_failure
 from image2pptx.pipeline.context import PipelineContext
 
 
@@ -305,8 +306,8 @@ def _prepare_image_asset(
     asset_path = asset_dir / f"{_safe_asset_name(region.get('id', kind))}.png"
     cropped = im.crop(crop_box).convert("RGBA")
     alpha_mask, mask_source = _asset_alpha_mask(region, crop_box, im.size, cropped.size)
-    if alpha_mask is None and _should_use_rmbg_fallback(kind, ctx):
-        alpha_mask, mask_source = _rmbg_alpha_from_model_or_fallback(cropped, ctx)
+    if alpha_mask is None and _should_require_rmbg_alpha(kind, ctx):
+        alpha_mask, mask_source = _rmbg_alpha_from_model(cropped, ctx)
     if alpha_mask is not None:
         cropped.putalpha(alpha_mask)
     cropped.save(asset_path)
@@ -363,7 +364,7 @@ def _decode_region_mask(mask: object, image_size: tuple[int, int]) -> Image.Imag
     return None
 
 
-def _should_use_rmbg_fallback(kind: str, ctx: PipelineContext | None) -> bool:
+def _should_require_rmbg_alpha(kind: str, ctx: PipelineContext | None) -> bool:
     if kind not in {"logo", "icon"} or ctx is None or not hasattr(ctx, "settings"):
         return False
     pipeline_enabled = bool(getattr(ctx.settings.pipeline, "enable_rmbg", True))
@@ -372,7 +373,7 @@ def _should_use_rmbg_fallback(kind: str, ctx: PipelineContext | None) -> bool:
     return pipeline_enabled and model_enabled
 
 
-def _rmbg_alpha_from_model_or_fallback(
+def _rmbg_alpha_from_model(
     cropped: Image.Image, ctx: PipelineContext | None
 ) -> tuple[Image.Image | None, str | None]:
     if ctx is not None and hasattr(ctx, "settings"):
@@ -384,29 +385,8 @@ def _rmbg_alpha_from_model_or_fallback(
                 return alpha, "rmbg_model"
             if warnings:
                 ctx.candidates.setdefault("rmbg_warnings", []).extend(warnings)
-    alpha = _rmbg_like_alpha_from_background(cropped)
-    return alpha, "rmbg_fallback" if alpha is not None else None
-
-
-def _rmbg_like_alpha_from_background(cropped: Image.Image) -> Image.Image | None:
-    rgb = cropped.convert("RGB")
-    width, height = rgb.size
-    if width < 2 or height < 2:
-        return None
-    corners = [rgb.getpixel((0, 0)), rgb.getpixel((width - 1, 0)), rgb.getpixel((0, height - 1)), rgb.getpixel((width - 1, height - 1))]
-    bg = tuple(sorted(channel_values)[len(channel_values) // 2] for channel_values in zip(*corners))
-    alpha = Image.new("L", (width, height), 255)
-    pixels = alpha.load()
-    rgb_pixels = rgb.load()
-    for y in range(height):
-        for x in range(width):
-            px = rgb_pixels[x, y]
-            distance = sum(abs(int(px[i]) - int(bg[i])) for i in range(3)) / 3
-            if distance < 10:
-                pixels[x, y] = 0
-            elif distance < 35:
-                pixels[x, y] = int((distance - 10) / 25 * 255)
-    return alpha
+                raise PipelineStageError(format_stage_failure("rmbg", warnings))
+    return None, None
 
 
 def _mask_source(region: dict) -> str | None:

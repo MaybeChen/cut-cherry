@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
+from image2pptx.core.errors import PipelineStageError, format_stage_failure
 from image2pptx.models.layout import LayoutModelAdapter
 from image2pptx.pipeline.context import PipelineContext
 
@@ -29,6 +30,8 @@ class LayoutParserProcessor:
         ctx.candidates["layout_regions"] = layout_regions
         if model_warnings:
             ctx.candidates["layout_warnings"] = model_warnings
+            _write_layout_report(ctx, model_regions, layout_regions, model_warnings)
+            raise PipelineStageError(format_stage_failure("layout", model_warnings))
         _write_layout_report(ctx, model_regions, layout_regions, model_warnings)
 
 
@@ -123,7 +126,7 @@ def _write_layout_report(
     report = {
         "job_id": ctx.job_id,
         "engine": ctx.settings.models.layout.get("engine", "rules"),
-        "status": "succeeded" if model_regions else "fallback_rules",
+        "status": "succeeded" if model_regions else "empty",
         "model_count": len(model_regions),
         "count": len(layout_regions),
         "kind_counts": _count_kinds(layout_regions),

@@ -19,7 +19,8 @@ def test_merge_text_items_preserves_separate_visual_lines():
     assert blocks[1]["text"] == "Second line"
 
 
-def test_layout_parser_adds_text_blocks_and_table_candidate_for_real_grid():
+def test_layout_parser_adds_text_blocks_and_table_candidate_for_real_grid(monkeypatch):
+    monkeypatch.setattr("image2pptx.processors.layout_parser._run_layout_model", lambda ctx: ([], []))
     ctx = SimpleNamespace(
         candidates={
             "text": [
@@ -50,7 +51,8 @@ def test_layout_parser_adds_text_blocks_and_table_candidate_for_real_grid():
     assert table["cells"][0][1]["text"] == "B"
 
 
-def test_layout_parser_does_not_turn_simple_frame_into_table():
+def test_layout_parser_does_not_turn_simple_frame_into_table(monkeypatch):
+    monkeypatch.setattr("image2pptx.processors.layout_parser._run_layout_model", lambda ctx: ([], []))
     ctx = SimpleNamespace(
         candidates={
             "text": [

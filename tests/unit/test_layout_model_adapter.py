@@ -57,7 +57,7 @@ def test_layout_adapter_uses_ppstructurev3_predict(monkeypatch, tmp_path):
     assert regions[0]["text"] == "Title"
 
 
-def test_layout_parser_writes_model_report_and_merges_fallback(tmp_path, monkeypatch):
+def test_layout_parser_writes_model_report_and_merges_rules(tmp_path, monkeypatch):
     normalized = tmp_path / "normalized.png"
     normalized.write_bytes(b"fake")
 

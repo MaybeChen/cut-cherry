@@ -1,8 +1,10 @@
 import json
 from types import SimpleNamespace
 
+import pytest
 from PIL import Image
 
+from image2pptx.core.errors import PipelineStageError
 from image2pptx.ir.elements import ElementType
 from image2pptx.processors.candidate_fusion import CandidateFusionProcessor
 
@@ -313,7 +315,7 @@ def test_candidate_fusion_applies_sam3_png_mask_alpha(tmp_path):
     assert manifest["items"][0]["crop_strategy"] == "mask_alpha"
 
 
-def test_candidate_fusion_applies_rmbg_fallback_alpha_for_logo(tmp_path):
+def test_candidate_fusion_fails_when_required_rmbg_is_unavailable(tmp_path):
     normalized = tmp_path / "normalized.png"
     image = Image.new("RGB", (100, 80), "white")
     for y in range(20, 60):
@@ -331,7 +333,7 @@ def test_candidate_fusion_applies_rmbg_fallback_alpha_for_logo(tmp_path):
         candidates={
             "layout_regions": [
                 {
-                    "id": "logo_fallback",
+                    "id": "logo_requires_rmbg",
                     "kind": "logo_candidate",
                     "bbox": [20, 10, 80, 70],
                     "confidence": 0.8,
@@ -345,14 +347,8 @@ def test_candidate_fusion_applies_rmbg_fallback_alpha_for_logo(tmp_path):
         },
     )
 
-    CandidateFusionProcessor().run(ctx)
-
-    asset = Image.open(tmp_path / "assets" / "logos" / "logo_fallback.png")
-    assert asset.mode == "RGBA"
-    assert asset.getpixel((0, 0))[3] == 0
-    assert asset.getpixel((30, 30))[3] == 255
-    manifest = json.loads((tmp_path / "assets" / "image_assets.json").read_text())
-    assert manifest["items"][0]["mask_source"] == "rmbg_fallback"
+    with pytest.raises(PipelineStageError, match="rmbg_not_available"):
+        CandidateFusionProcessor().run(ctx)
 
 
 def test_candidate_fusion_applies_polygon_alpha(tmp_path):
