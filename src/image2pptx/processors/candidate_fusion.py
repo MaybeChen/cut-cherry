@@ -4,6 +4,7 @@ import json
 import re
 import base64
 import io
+from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter
 from image2pptx.ir.elements import (
@@ -34,7 +35,9 @@ class CandidateFusionProcessor:
         asset_image_regions, structural_image_regions = _split_asset_image_regions(ctx, image_regions, im)
         formula_regions = ctx.candidates.get("formulas", [])
         chart_regions = ctx.candidates.get("charts", [])
-        # 简单背景使用原生纯色，避免整页原图伪背景。
+        asset_root = ctx.job_dir / "assets"
+        asset_root.mkdir(parents=True, exist_ok=True)
+        background_asset = _prepare_background_asset(im, asset_root)
         slide.elements.append(
             SlideElement(
                 id="background",
@@ -42,8 +45,12 @@ class CandidateFusionProcessor:
                 bbox=Rect(x=0, y=0, width=im.width, height=im.height),
                 z_index=0,
                 style=ElementStyle(fill_color="#ffffff"),
-                provenance=Provenance(source="background_processor"),
-                editable_strategy=EditableStrategy.NATIVE_SHAPE,
+                provenance=Provenance(
+                    source="background_processor",
+                    raw={"background_strategy": "blurred_raster_underlay"},
+                ),
+                editable_strategy=EditableStrategy.RASTER_IMAGE,
+                asset_path=background_asset,
             )
         )
         for table in table_regions:
@@ -60,8 +67,6 @@ class CandidateFusionProcessor:
                     editable_strategy=EditableStrategy.NATIVE_TABLE,
                 )
             )
-        asset_root = ctx.job_dir / "assets"
-        asset_root.mkdir(parents=True, exist_ok=True)
         asset_manifest = _start_asset_manifest(ctx, asset_root, image_regions)
         for structural_region in structural_image_regions:
             _record_asset_manifest_item(
@@ -163,7 +168,7 @@ class CandidateFusionProcessor:
                     editable_strategy=EditableStrategy.NATIVE_CHART,
                 )
             )
-        text_candidates = ctx.candidates.get("text_blocks") or ctx.candidates.get("text", [])
+        text_candidates = _split_text_candidates_for_layout(ctx.candidates.get("text_blocks") or ctx.candidates.get("text", []))
         shape_candidates = [
             *ctx.candidates.get("shapes", []),
             *_synthesize_supporting_cards(ctx, im, ctx.candidates.get("shapes", []), text_candidates),
@@ -237,6 +242,67 @@ class CandidateFusionProcessor:
         slide.validate_scene()
         slide.relations.extend(slide.find_overlaps(0.2))
         return slide
+
+
+def _prepare_background_asset(im: Image.Image, asset_root) -> Path:
+    background_dir = asset_root / "backgrounds"
+    background_dir.mkdir(parents=True, exist_ok=True)
+    background_path = background_dir / "background_underlay.png"
+    # Preserve coarse page color/frame/texture while suppressing foreground glyphs
+    # and icons, so editable OCR/icon layers do not visually double with the source.
+    blurred = im.convert("RGB").filter(ImageFilter.GaussianBlur(radius=8))
+    white = Image.new("RGB", blurred.size, "#ffffff")
+    underlay = Image.blend(blurred, white, 0.35)
+    underlay.save(background_path)
+    return background_path
+
+
+def _split_text_candidates_for_layout(text_candidates: list[dict]) -> list[dict]:
+    split: list[dict] = []
+    for block in text_candidates:
+        pieces = _split_text_block_by_raw_items(block)
+        for piece in pieces:
+            piece = dict(piece)
+            piece["id"] = f"text_block_{len(split)}"
+            split.append(piece)
+    return split
+
+
+def _split_text_block_by_raw_items(block: dict) -> list[dict]:
+    raw_items = block.get("raw_items") or []
+    if len(raw_items) <= 1:
+        return [block]
+    ordered = sorted(
+        [item for item in raw_items if len(item.get("bbox", [])) == 4],
+        key=lambda item: item["bbox"][0],
+    )
+    if len(ordered) <= 1:
+        return [block]
+    heights = [item["bbox"][3] - item["bbox"][1] for item in ordered]
+    typical_height = sum(heights) / max(len(heights), 1)
+    groups: list[list[dict]] = [[ordered[0]]]
+    for item in ordered[1:]:
+        previous = groups[-1][-1]
+        gap = item["bbox"][0] - previous["bbox"][2]
+        if gap > max(typical_height * 1.4, 10):
+            groups.append([item])
+        else:
+            groups[-1].append(item)
+    if len(groups) == 1:
+        return [block]
+    return [_merge_raw_text_group(block, group) for group in groups]
+
+
+def _merge_raw_text_group(source_block: dict, group: list[dict]) -> dict:
+    bbox = _union_bbox([item["bbox"] for item in group])
+    return {
+        **source_block,
+        "text": " ".join(str(item.get("text", "")).strip() for item in group if item.get("text")),
+        "bbox": bbox,
+        "confidence": sum(float(item.get("confidence", 0.0)) for item in group) / max(len(group), 1),
+        "source_ids": [item.get("id", "text") for item in group],
+        "raw_items": group,
+    }
 
 
 def _synthesize_supporting_cards(

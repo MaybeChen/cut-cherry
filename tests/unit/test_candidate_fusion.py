@@ -533,3 +533,64 @@ def test_candidate_fusion_filters_decorative_connectors_and_keeps_short_diagonal
     connectors = [element for element in slide.elements if element.type == ElementType.CONNECTOR]
 
     assert [connector.id for connector in connectors] == ["short_diag"]
+
+
+def test_candidate_fusion_adds_blurred_background_underlay(tmp_path):
+    normalized = tmp_path / "normalized.png"
+    Image.new("RGB", (240, 120), "#dcecff").save(normalized)
+    ctx = SimpleNamespace(
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        candidates={
+            "layout_regions": [],
+            "text_blocks": [],
+            "shapes": [],
+            "formulas": [],
+            "charts": [],
+            "connectors": [],
+        },
+    )
+
+    slide = CandidateFusionProcessor().run(ctx)
+    background = next(element for element in slide.elements if element.id == "background")
+
+    assert background.type == ElementType.BACKGROUND
+    assert background.asset_path == tmp_path / "assets" / "backgrounds" / "background_underlay.png"
+    assert background.asset_path.exists()
+    assert background.provenance.raw["background_strategy"] == "blurred_raster_underlay"
+
+
+def test_candidate_fusion_splits_wide_ocr_line_into_layout_pieces(tmp_path):
+    normalized = tmp_path / "normalized.png"
+    Image.new("RGB", (600, 240), "white").save(normalized)
+    ctx = SimpleNamespace(
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        candidates={
+            "layout_regions": [],
+            "text_blocks": [
+                {
+                    "id": "text_line_0",
+                    "kind": "text_line",
+                    "text": "Agent roles Skill contracts",
+                    "bbox": [100, 100, 390, 120],
+                    "confidence": 0.95,
+                    "raw_items": [
+                        {"id": "text_0", "text": "Agent roles", "bbox": [100, 100, 170, 120], "confidence": 0.95},
+                        {"id": "text_1", "text": "Skill contracts", "bbox": [300, 100, 390, 120], "confidence": 0.95},
+                    ],
+                }
+            ],
+            "shapes": [],
+            "formulas": [],
+            "charts": [],
+            "connectors": [],
+        },
+    )
+
+    slide = CandidateFusionProcessor().run(ctx)
+    texts = [element for element in slide.elements if element.type == ElementType.TEXT]
+
+    assert [text.text for text in texts] == ["Agent roles", "Skill contracts"]
+    assert texts[0].bbox.x == 100
+    assert texts[1].bbox.x == 300

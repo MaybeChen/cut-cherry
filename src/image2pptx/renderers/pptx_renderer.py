@@ -42,10 +42,13 @@ class PptxRenderer:
         for e in ir.sort_by_z_index():
             x, y, w, h = mapper.box(e.bbox.x, e.bbox.y, e.bbox.width, e.bbox.height)
             if e.type == ElementType.BACKGROUND:
-                shp = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, w, h)
-                shp.fill.solid()
-                shp.fill.fore_color.rgb = _hex_to_rgb(e.style.fill_color)
-                shp.line.fill.background()
+                if e.asset_path:
+                    slide.shapes.add_picture(str(e.asset_path), x, y, w, h)
+                else:
+                    shp = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, w, h)
+                    shp.fill.solid()
+                    shp.fill.fore_color.rgb = _hex_to_rgb(e.style.fill_color)
+                    shp.line.fill.background()
             elif e.type == ElementType.SHAPE:
                 shp = slide.shapes.add_shape(
                     MSO_SHAPE.ROUNDED_RECTANGLE
