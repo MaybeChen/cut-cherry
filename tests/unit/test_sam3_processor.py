@@ -1,7 +1,13 @@
 from types import SimpleNamespace
+import warnings
 
 from image2pptx.models import sam3 as sam3_model
-from image2pptx.models.sam3 import Sam3Adapter, _ensure_sam3_source_on_path, normalize_sam3_result
+from image2pptx.models.sam3 import (
+    Sam3Adapter,
+    _ensure_sam3_source_on_path,
+    _import_sam3_image_processor,
+    normalize_sam3_result,
+)
 from image2pptx.processors.sam3_processor import Sam3Processor
 
 
@@ -159,3 +165,19 @@ def test_sam3_adapter_reports_missing_runtime_modules_before_runtime_init(tmp_pa
         "sam3_pycocotools_missing",
     ]
     assert [warning["module"] for warning in warnings] == ["triton", "pycocotools"]
+
+
+def test_sam3_image_processor_import_suppresses_cpu_optional_warnings(monkeypatch) -> None:
+    def fake_import_module(name: str):
+        warnings.warn("CUDA is not available or torch_xla is imported. Disabling autocast.", UserWarning)
+        warnings.warn("Importing from timm.models.layers is deprecated, please import via timm.layers", FutureWarning)
+        return SimpleNamespace(name=name)
+
+    monkeypatch.setattr(sam3_model.importlib, "import_module", fake_import_module)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        module = _import_sam3_image_processor()
+
+    assert module.name == "sam3.model.sam3_image_processor"
+    assert caught == []

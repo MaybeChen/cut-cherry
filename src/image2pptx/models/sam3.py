@@ -124,7 +124,7 @@ class _LocalSam3Runtime:
     def __init__(self, config: dict[str, Any], device: str) -> None:
         torch = importlib.import_module("torch")
         builder = _import_sam3_model_builder()
-        processor_mod = importlib.import_module("sam3.model.sam3_image_processor")
+        processor_mod = _import_sam3_image_processor()
         self.torch = torch
         self.config = config
         self.device = _resolve_device(torch, config.get("device") or device)
@@ -245,13 +245,32 @@ def _normalize_kind(label: str) -> str:
 
 def _import_sam3_model_builder() -> Any:
     """Import SAM3's model builder without surfacing pkg_resources noise."""
+    return _import_sam3_module("sam3.model_builder")
+
+
+def _import_sam3_image_processor() -> Any:
+    """Import SAM3 image processor without surfacing CPU-only optional warnings."""
+    return _import_sam3_module("sam3.model.sam3_image_processor")
+
+
+def _import_sam3_module(module_name: str) -> Any:
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
             message="pkg_resources is deprecated as an API.*",
             category=UserWarning,
         )
-        return importlib.import_module("sam3.model_builder")
+        warnings.filterwarnings(
+            "ignore",
+            message="CUDA is not available or torch_xla is imported\\. Disabling autocast\\.",
+            category=UserWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message="Importing from timm\\.models\\.layers is deprecated.*",
+            category=FutureWarning,
+        )
+        return importlib.import_module(module_name)
 
 
 def _missing_required_local_assets(config: dict[str, Any]) -> list[dict[str, Any]]:

@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+from PIL import Image
+
 from image2pptx.models import layout as layout_model
 from image2pptx.models.layout import LayoutModelAdapter, _predict, normalize_layout_result
 from image2pptx.processors.layout_parser import LayoutParserProcessor
@@ -149,6 +151,37 @@ def test_layout_parser_writes_model_report_and_merges_rules(tmp_path, monkeypatc
     assert ctx.artifacts["layout_results"] == tmp_path / "layout_results.json"
     report = json.loads((tmp_path / "layout_results.json").read_text(encoding="utf-8"))
     assert report["kind_counts"] == {"title": 1, "text_line": 1}
+
+
+def test_layout_report_serializes_non_json_raw_values(tmp_path, monkeypatch):
+    normalized = tmp_path / "normalized.png"
+    normalized.write_bytes(b"fake")
+
+    def fake_infer(self, image_path: Path):
+        return [
+            {
+                "id": "layout_model_0",
+                "kind": "image_candidate",
+                "bbox": [10, 10, 100, 40],
+                "confidence": 0.9,
+                "raw": {"image": Image.new("RGB", (2, 3), "white")},
+            }
+        ], []
+
+    monkeypatch.setattr(LayoutModelAdapter, "infer", fake_infer)
+    ctx = SimpleNamespace(
+        job_id="job_raw_image",
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        device="cpu",
+        settings=SimpleNamespace(models=SimpleNamespace(layout={"engine": "pp_structure_v3"})),
+        candidates={"text": [], "lines": [], "shapes": []},
+    )
+
+    LayoutParserProcessor().run(ctx)
+
+    report = json.loads((tmp_path / "layout_results.json").read_text(encoding="utf-8"))
+    assert report["items"][0]["raw"]["image"] == "<PIL.Image mode=RGB size=(2, 3)>"
 
 
 def test_paddleocr_vl_uses_local_paddlex_config(monkeypatch, tmp_path):

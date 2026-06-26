@@ -142,8 +142,17 @@ def _write_layout_report(
         "warnings": warnings,
         "items": layout_regions,
     }
-    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    report_path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, default=_layout_report_json_default),
+        encoding="utf-8",
+    )
     ctx.artifacts["layout_results"] = report_path
+
+
+def _layout_report_json_default(value: Any) -> str:
+    if isinstance(value, Image.Image):
+        return f"<PIL.Image mode={value.mode} size={value.size}>"
+    return repr(value)
 
 
 def _count_kinds(regions: list[dict]) -> dict[str, int]:
