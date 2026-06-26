@@ -25,13 +25,18 @@ class CandidateFusionProcessor:
     def run(self, ctx: PipelineContext) -> SlideIR:
         im = Image.open(ctx.artifacts["normalized"])
         slide = SlideIR(width=im.width, height=im.height)
+        layers = ctx.candidates.get("layers") if isinstance(ctx.candidates.get("layers"), dict) else {}
         layout_regions = ctx.candidates.get("layout_regions", [])
         table_regions = [r for r in layout_regions if r.get("kind") == "table_candidate"]
-        image_regions = [
-            r
-            for r in layout_regions
-            if r.get("kind") in {"image_candidate", "logo_candidate", "icon_candidate"}
-        ]
+        image_regions = (
+            list(layers.get("assets", []))
+            if layers
+            else [
+                r
+                for r in layout_regions
+                if r.get("kind") in {"image_candidate", "logo_candidate", "icon_candidate"}
+            ]
+        )
         asset_image_regions, structural_image_regions = _split_asset_image_regions(ctx, image_regions, im)
         formula_regions = ctx.candidates.get("formulas", [])
         chart_regions = ctx.candidates.get("charts", [])
@@ -168,10 +173,12 @@ class CandidateFusionProcessor:
                     editable_strategy=EditableStrategy.NATIVE_CHART,
                 )
             )
-        text_candidates = _split_text_candidates_for_layout(ctx.candidates.get("text_blocks") or ctx.candidates.get("text", []))
+        text_source = list(layers.get("texts", [])) if layers else (ctx.candidates.get("text_blocks") or ctx.candidates.get("text", []))
+        text_candidates = _split_text_candidates_for_layout(text_source)
+        base_shapes = list(layers.get("containers", [])) if layers else ctx.candidates.get("shapes", [])
         shape_candidates = [
-            *ctx.candidates.get("shapes", []),
-            *_synthesize_supporting_cards(ctx, im, ctx.candidates.get("shapes", []), text_candidates),
+            *base_shapes,
+            *_synthesize_supporting_cards(ctx, im, base_shapes, text_candidates),
         ]
         for s in shape_candidates:
             if _is_covered_by_region(
@@ -220,7 +227,8 @@ class CandidateFusionProcessor:
                     editable_strategy=EditableStrategy.NATIVE_TEXT,
                 )
             )
-        for c in _semantic_connectors(ctx.candidates.get("connectors", []), shape_candidates, text_candidates, im)[:35]:
+        connector_source = list(layers.get("connectors", [])) if layers else ctx.candidates.get("connectors", [])
+        for c in _semantic_connectors(connector_source, shape_candidates, text_candidates, im)[:35]:
             (x1, y1), (x2, y2) = c["points"]
             slide.elements.append(
                 SlideElement(

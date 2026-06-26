@@ -14,6 +14,7 @@ from image2pptx.processors.formula_processor import FormulaProcessor
 from image2pptx.processors.chart_processor import ChartProcessor
 from image2pptx.processors.arrow_processor import ArrowProcessor
 from image2pptx.processors.candidate_fusion import CandidateFusionProcessor
+from image2pptx.processors.layer_decomposition import LayerDecompositionProcessor
 from image2pptx.renderers.pptx_renderer import PptxRenderer
 
 
@@ -71,6 +72,12 @@ class ImageToPptxPipeline:
             _run_stage(ctx, "chart", "简单柱状图候选检测", ChartProcessor().run)
         else:
             _print_stage_skipped("chart", "settings.pipeline.enable_chart=false")
+        _run_stage(
+            ctx,
+            "layer_decomposition",
+            "按 background/container/text/asset/connector 显式分层并建立父子归属",
+            LayerDecompositionProcessor().run,
+        )
         ir = _run_stage(
             ctx,
             "candidate_fusion",
