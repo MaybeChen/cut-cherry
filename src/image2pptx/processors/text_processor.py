@@ -10,6 +10,7 @@ from contextlib import contextmanager, nullcontext, redirect_stderr, redirect_st
 from pathlib import Path
 from typing import Any, Callable
 
+from image2pptx.core.errors import PipelineStageError, format_stage_failure
 from image2pptx.pipeline.context import PipelineContext
 
 
@@ -29,7 +30,7 @@ class TextProcessor:
             ctx.candidates["text"] = blocks
             ctx.candidates["text_warnings"] = [{"reason": "paddleocr_not_installed"}]
             _write_ocr_report(ctx, status="skipped", warnings=ctx.candidates["text_warnings"])
-            return
+            raise PipelineStageError(format_stage_failure("text", ctx.candidates["text_warnings"]))
 
         missing_dirs = _missing_model_dirs(_configured_model_dirs(ocr_config))
         if missing_dirs and not bool(ocr_config.get("allow_auto_download", False)):
@@ -38,14 +39,14 @@ class TextProcessor:
                 {"reason": "local_ocr_model_missing", "missing_dirs": missing_dirs}
             ]
             _write_ocr_report(ctx, status="skipped", warnings=ctx.candidates["text_warnings"])
-            return
+            raise PipelineStageError(format_stage_failure("text", ctx.candidates["text_warnings"]))
 
         model_mismatches = _validate_local_model_names(ocr_config)
         if model_mismatches:
             ctx.candidates["text"] = blocks
             ctx.candidates["text_warnings"] = model_mismatches
             _write_ocr_report(ctx, status="failed", warnings=model_mismatches)
-            return
+            raise PipelineStageError(format_stage_failure("text", model_mismatches))
 
         _prepare_paddle_runtime_logs()
         suppress_startup_logs = bool(ocr_config.get("suppress_startup_logs", True))
@@ -59,7 +60,7 @@ class TextProcessor:
             ctx.candidates["text"] = blocks
             ctx.candidates["text_warnings"] = ocr_warnings
             _write_ocr_report(ctx, status="failed", warnings=ocr_warnings)
-            return
+            raise PipelineStageError(format_stage_failure("text", ocr_warnings))
 
         try:
             if api_version == "v3" and hasattr(ocr, "predict"):
@@ -73,7 +74,7 @@ class TextProcessor:
             ctx.candidates["text"] = blocks
             ctx.candidates["text_warnings"] = [_build_inference_error_warning(exc)]
             _write_ocr_report(ctx, status="failed", warnings=ctx.candidates["text_warnings"])
-            return
+            raise PipelineStageError(format_stage_failure("text", ctx.candidates["text_warnings"]))
 
         ctx.candidates["text"] = _normalize_ocr_result(result)
         if ocr_warnings:
