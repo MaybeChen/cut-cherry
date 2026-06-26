@@ -122,3 +122,24 @@ def test_detect_raster_icon_candidates_keeps_colored_icon_separate_from_touching
     assert regions[0]["kind"] == "icon_candidate"
     assert regions[0]["bbox"][0] <= 44
     assert regions[0]["bbox"][2] < 82
+
+
+def test_detect_raster_visual_candidates_includes_medium_embedded_image(tmp_path) -> None:
+    from types import SimpleNamespace
+
+    from PIL import ImageDraw
+
+    from image2pptx.processors.layout_parser import _detect_raster_icon_candidates
+
+    normalized = tmp_path / "normalized.png"
+    image = Image.new("RGB", (420, 260), "white")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((95, 58, 260, 175), fill="#dbeafe")
+    draw.rectangle((108, 72, 245, 160), fill="#2563eb")
+    draw.ellipse((132, 84, 170, 122), fill="#f97316")
+    image.save(normalized)
+    ctx = SimpleNamespace(artifacts={"normalized": normalized})
+
+    regions = _detect_raster_icon_candidates(ctx, text_blocks=[], slide_size=(420, 260))
+
+    assert any(region["kind"] == "image_candidate" for region in regions)
