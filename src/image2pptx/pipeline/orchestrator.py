@@ -111,7 +111,7 @@ class ImageToPptxPipeline:
         _run_stage(
             ctx,
             "layer_decomposition",
-            "按 background/container/text/asset/connector 显式分层并建立父子归属",
+            "按元素组/图层组织候选，生成 background/container/text/asset/connector 主线协议",
             LayerDecompositionProcessor().run,
         )
         if self.settings.pipeline.enable_vlm:
@@ -126,7 +126,7 @@ class ImageToPptxPipeline:
         ir = _run_stage(
             ctx,
             "candidate_fusion",
-            "融合 layout/text/table/image/formula/chart/connector 为 SlideIR，并生成图片资产",
+            "按元素组顺序融合 table/asset/formula/chart/container/text/connector 为 SlideIR",
             CandidateFusionProcessor().run,
         )
         ir_path = job_dir / "slide_ir.json"

@@ -16,6 +16,7 @@ from image2pptx.ir.elements import (
     SlideElement,
 )
 from image2pptx.ir.slide_ir import SlideIR
+from image2pptx.ir.candidates import ElementGroup, build_element_groups, grouped_candidates
 from image2pptx.models.rmbg import RmbgAdapter
 from image2pptx.core.errors import PipelineStageError, format_stage_failure
 from image2pptx.pipeline.context import PipelineContext
@@ -28,11 +29,16 @@ class CandidateFusionProcessor:
         layers = (
             ctx.candidates.get("layers") if isinstance(ctx.candidates.get("layers"), dict) else {}
         )
+        element_groups = _element_groups_for_fusion(ctx, layers)
         layout_regions = ctx.candidates.get("layout_regions", [])
-        table_regions = [r for r in layout_regions if r.get("kind") == "table_candidate"]
+        table_regions = (
+            grouped_candidates(element_groups, ElementGroup.TABLE)
+            if element_groups
+            else [r for r in layout_regions if r.get("kind") == "table_candidate"]
+        )
         image_regions = (
-            list(layers.get("assets", []))
-            if layers
+            grouped_candidates(element_groups, ElementGroup.ASSET)
+            if element_groups
             else [
                 r
                 for r in layout_regions
@@ -42,8 +48,16 @@ class CandidateFusionProcessor:
         asset_image_regions, structural_image_regions = _split_asset_image_regions(
             ctx, image_regions, im
         )
-        formula_regions = ctx.candidates.get("formulas", [])
-        chart_regions = ctx.candidates.get("charts", [])
+        formula_regions = (
+            grouped_candidates(element_groups, ElementGroup.FORMULA)
+            if element_groups
+            else ctx.candidates.get("formulas", [])
+        )
+        chart_regions = (
+            grouped_candidates(element_groups, ElementGroup.CHART)
+            if element_groups
+            else ctx.candidates.get("charts", [])
+        )
         asset_root = ctx.job_dir / "assets"
         asset_root.mkdir(parents=True, exist_ok=True)
         background_asset = _prepare_background_asset(im, asset_root)
@@ -178,18 +192,25 @@ class CandidateFusionProcessor:
                 )
             )
         text_source = (
-            list(layers.get("texts", []))
-            if layers
-            else (ctx.candidates.get("text_blocks") or ctx.candidates.get("text", []))
+            grouped_candidates(element_groups, ElementGroup.TEXT)
+            if element_groups
+            else (
+                list(layers.get("texts", []))
+                if layers
+                else (ctx.candidates.get("text_blocks") or ctx.candidates.get("text", []))
+            )
         )
         text_candidates = _split_text_candidates_for_layout(text_source)
         base_shapes = (
-            list(layers.get("containers", [])) if layers else ctx.candidates.get("shapes", [])
+            grouped_candidates(element_groups, ElementGroup.CONTAINER)
+            if element_groups
+            else (
+                list(layers.get("containers", []))
+                if layers
+                else ctx.candidates.get("shapes", [])
+            )
         )
-        shape_candidates = [
-            *base_shapes,
-            *_synthesize_supporting_cards(ctx, im, base_shapes, text_candidates),
-        ]
+        shape_candidates = list(base_shapes)
         for s in shape_candidates:
             if _is_covered_by_region(
                 s["bbox"],
@@ -243,7 +264,13 @@ class CandidateFusionProcessor:
                 )
             )
         connector_source = (
-            list(layers.get("connectors", [])) if layers else ctx.candidates.get("connectors", [])
+            grouped_candidates(element_groups, ElementGroup.CONNECTOR)
+            if element_groups
+            else (
+                list(layers.get("connectors", []))
+                if layers
+                else ctx.candidates.get("connectors", [])
+            )
         )
         for c in _semantic_connectors(connector_source, shape_candidates, text_candidates, im)[:35]:
             (x1, y1), (x2, y2) = c["points"]
@@ -267,6 +294,17 @@ class CandidateFusionProcessor:
         slide.validate_scene()
         slide.relations.extend(slide.find_overlaps(0.2))
         return slide
+
+
+def _element_groups_for_fusion(ctx: PipelineContext, layers: dict) -> dict:
+    element_groups = ctx.candidates.get("element_groups")
+    if isinstance(element_groups, dict) and element_groups:
+        return element_groups
+    if layers:
+        element_groups = build_element_groups(layers, ctx.candidates)
+        ctx.candidates["element_groups"] = element_groups
+        return element_groups
+    return {}
 
 
 def _prepare_background_asset(im: Image.Image, asset_root) -> Path:
@@ -329,56 +367,6 @@ def _merge_raw_text_group(source_block: dict, group: list[dict]) -> dict:
         "source_ids": [item.get("id", "text") for item in group],
         "raw_items": group,
     }
-
-
-def _synthesize_supporting_cards(
-    ctx: PipelineContext, im: Image.Image, existing_shapes: list[dict], text_candidates: list[dict]
-) -> list[dict]:
-    cards: list[dict] = []
-    right_texts = [
-        block
-        for block in text_candidates
-        if len(block.get("bbox", [])) == 4
-        and block["bbox"][0] >= im.width * 0.68
-        and block["bbox"][1] <= im.height * 0.84
-    ]
-    if right_texts:
-        panel_bbox = _expanded_bbox(
-            _union_bbox([block["bbox"] for block in right_texts]),
-            pad_x=28,
-            pad_y=42,
-            width=im.width,
-            height=im.height,
-        )
-        if not _is_covered_by_region(panel_bbox, existing_shapes, min_ratio=0.65):
-            cards.append(
-                {
-                    "id": "synthetic_right_panel",
-                    "kind": "roundRect",
-                    "bbox": panel_bbox,
-                    "fill_color": "#ffffff",
-                    "line_color": "#e4edf6",
-                    "confidence": 0.45,
-                    "source": "candidate_fusion_synthetic",
-                }
-            )
-    for block in text_candidates:
-        text = str(block.get("text", "")).lower()
-        if not any(token in text for token in ("from ambition", "executable", "patterns")):
-            continue
-        bbox = _expanded_bbox(block.get("bbox", []), 14, 10, im.width, im.height)
-        cards.append(
-            {
-                "id": f"synthetic_callout_{len(cards)}",
-                "kind": "roundRect",
-                "bbox": bbox,
-                "fill_color": "#fff3e6",
-                "line_color": "#f2a85f",
-                "confidence": 0.42,
-                "source": "candidate_fusion_synthetic",
-            }
-        )
-    return cards
 
 
 def _text_style_for_block(block: dict, shapes: list[dict]) -> ElementStyle:
