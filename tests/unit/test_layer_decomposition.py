@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from PIL import Image
 
+from image2pptx.ir.candidates import ElementGroup, build_element_groups
 from image2pptx.processors.layer_decomposition import LayerDecompositionProcessor, build_layers
 
 
@@ -38,6 +39,12 @@ def test_build_layers_separates_containers_assets_and_assigns_text_parent():
     assert layers["assets"][0]["id"] == "logo"
     assert layers["texts"][0]["parent_id"] == layers["containers"][0]["id"]
 
+    element_groups = build_element_groups(layers, candidates)
+
+    assert element_groups["counts"][ElementGroup.CONTAINER.value] == 1
+    assert element_groups[ElementGroup.TEXT.value][0]["parent_id"] == layers["containers"][0]["id"]
+    assert element_groups[ElementGroup.ASSET.value][0]["raw"]["id"] == "logo"
+
 
 def test_layer_decomposition_processor_writes_report(tmp_path):
     normalized = tmp_path / "normalized.png"
@@ -51,6 +58,8 @@ def test_layer_decomposition_processor_writes_report(tmp_path):
     LayerDecompositionProcessor().run(ctx)
 
     assert "layers" in ctx.candidates
+    assert "element_groups" in ctx.candidates
+    assert ctx.candidates["element_groups"]["background"][0]["group"] == "background"
     assert ctx.artifacts["layer_decomposition"] == tmp_path / "layer_decomposition.json"
     assert ctx.artifacts["layer_decomposition"].exists()
 

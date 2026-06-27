@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from image2pptx.core.errors import PipelineStageError, format_stage_failure
+from image2pptx.ir.candidates import build_element_groups
 from image2pptx.models.vlm import VlmAdapter
 from image2pptx.pipeline.context import PipelineContext
 
@@ -44,6 +45,7 @@ class VlmArbitrationProcessor:
             raise PipelineStageError(format_stage_failure("vlm", warnings))
         result = result or {}
         apply_vlm_arbitration(layers, result)
+        ctx.candidates["element_groups"] = build_element_groups(layers, ctx.candidates)
         ctx.candidates["vlm_arbitration"] = result
         _write_vlm_report(ctx, status="succeeded", result=result, warnings=[])
 

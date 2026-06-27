@@ -5,6 +5,7 @@ from typing import Any
 
 from PIL import Image
 
+from image2pptx.ir.candidates import build_element_groups
 from image2pptx.pipeline.context import PipelineContext
 
 
@@ -24,9 +25,12 @@ class LayerDecompositionProcessor:
             image = im.convert("RGB")
             slide_size = (image.width, image.height)
             layers = build_layers(ctx.candidates, slide_size, image=image)
+        element_groups = build_element_groups(layers, ctx.candidates)
         ctx.candidates["layers"] = layers
+        ctx.candidates["element_groups"] = element_groups
         report_path = ctx.job_dir / "layer_decomposition.json"
-        report_path.write_text(json.dumps(layers, ensure_ascii=False, indent=2), encoding="utf-8")
+        report = {"layers": layers, "element_groups": element_groups}
+        report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         ctx.artifacts["layer_decomposition"] = report_path
 
 
@@ -52,7 +56,7 @@ def build_layers(
     assets = [_with_parent(asset, containers) for asset in assets]
     connectors = [_with_connector_parent(connector, containers) for connector in connector_regions]
     return {
-        "background": {"strategy": "blurred_raster_underlay"},
+        "background": {"strategy": "source_raster_underlay"},
         "containers": containers,
         "texts": texts,
         "assets": assets,
