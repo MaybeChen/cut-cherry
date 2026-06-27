@@ -40,7 +40,7 @@
 | 主分割路径 | SAM3 是可选候选来源之一，输出会被适配进 `element_groups` | SAM3 是主路径，支持 prompt group：image / arrow / shape / background | 我们已有 group-first 中间协议，但仍缺少 per-group 质量统计与 SAM3 prompt group 驱动 |
 | 文本路径 | OCR → text blocks → text layer → fusion | OCR 先生成 text-only DrawIO，再与 SAM3 空间 merge | 我们缺少可单独评估的 text-only 产物和文本召回 proxy |
 | 公式 | 有公式候选与 Office Math 策略 | Pix2Text + high-res crop-guided strategy | 我们缺少 crop provenance、公式识别置信度与局部重跑 |
-| 中间产物 | 有 artifacts 和 asset manifest，但索引不统一 | 输出 text-only XML、SAM3 visualization、metadata、metric/refinement 结果 | 我们需要统一 debug/index.json 和 overlay 集合 |
+| 中间产物 | 有 artifacts、asset manifest 与 source/container underlay，但索引不统一 | 输出 text-only XML、SAM3 visualization、metadata、metric/refinement 结果 | 我们需要统一 debug/index.json 和 overlay 集合 |
 | 质量闭环 | evaluation 模块存在，但未强接入主链路 | metric evaluation + bad-region refinement | 我们还不能稳定回答“哪里没还原好” |
 | 人工修复 | 暂无 patchable repair schema | README 展示 manual repair/save locally | 我们需要 SlideIR patch schema + rerender API |
 | 失败策略 | fail-fast 明确，但低配环境体验偏硬 | 可通过 `--refine`、`--no-text`、prompt groups 控制 | 我们需要区分阻塞失败与可降级低置信候选 |
@@ -53,7 +53,7 @@
 - 删除命中特定英文 token（`from ambition`、`executable`、`patterns`）后合成 callout 的规则。
 - 将 shape 候选来源恢复为实际 processor 产出的 `base_shapes`，避免凭某个演示图布局生成不存在的元素。
 
-保留的规则仍然是通用规则：文本分块、结构性 image 区域过滤、asset manifest、背景 underlay、connector 装饰线过滤等。
+保留的规则仍然是通用规则：文本分块、结构性 image 区域过滤、asset manifest、source/container underlay、connector 装饰线过滤等。
 
 ## 4. 接下来建议优化路线
 

@@ -535,7 +535,7 @@ def test_candidate_fusion_filters_decorative_connectors_and_keeps_short_diagonal
     assert [connector.id for connector in connectors] == ["short_diag"]
 
 
-def test_candidate_fusion_adds_blurred_background_underlay(tmp_path):
+def test_candidate_fusion_adds_source_background_underlay(tmp_path):
     normalized = tmp_path / "normalized.png"
     Image.new("RGB", (240, 120), "#dcecff").save(normalized)
     ctx = SimpleNamespace(
@@ -557,7 +557,52 @@ def test_candidate_fusion_adds_blurred_background_underlay(tmp_path):
     assert background.type == ElementType.BACKGROUND
     assert background.asset_path == tmp_path / "assets" / "backgrounds" / "background_underlay.png"
     assert background.asset_path.exists()
-    assert background.provenance.raw["background_strategy"] == "blurred_raster_underlay"
+    assert background.provenance.raw["background_strategy"] == "source_raster_underlay"
+
+
+def test_candidate_fusion_adds_container_underlay_for_group_first_structural_container(tmp_path):
+    normalized = tmp_path / "normalized.png"
+    im = Image.new("RGB", (400, 240), "white")
+    for x in range(80, 320):
+        for y in range(80, 150):
+            im.putpixel((x, y), (8, 60, 90))
+    im.save(normalized)
+    ctx = SimpleNamespace(
+        job_dir=tmp_path,
+        artifacts={"normalized": normalized},
+        candidates={
+            "layers": {
+                "background": {"strategy": "source_raster_underlay"},
+                "containers": [
+                    {
+                        "id": "implementation_panel",
+                        "kind": "image_candidate",
+                        "bbox": [80, 80, 320, 150],
+                        "confidence": 0.85,
+                        "source": "layout",
+                        "source_id": "layout_panel",
+                    }
+                ],
+                "texts": [],
+                "assets": [],
+                "connectors": [],
+                "counts": {"containers": 1, "texts": 0, "assets": 0, "connectors": 0},
+            },
+            "layout_regions": [],
+            "text_blocks": [],
+            "shapes": [],
+            "formulas": [],
+            "charts": [],
+            "connectors": [],
+        },
+    )
+
+    slide = CandidateFusionProcessor().run(ctx)
+    underlay = next(element for element in slide.elements if element.id == "implementation_panel_underlay")
+
+    assert underlay.type == ElementType.UNKNOWN_PATCH
+    assert underlay.asset_path == tmp_path / "assets" / "container_underlays" / "implementation_panel.png"
+    assert underlay.asset_path.exists()
 
 
 def test_candidate_fusion_splits_wide_ocr_line_into_layout_pieces(tmp_path):

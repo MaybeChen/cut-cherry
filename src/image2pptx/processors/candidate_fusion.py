@@ -70,7 +70,7 @@ class CandidateFusionProcessor:
                 style=ElementStyle(fill_color="#ffffff"),
                 provenance=Provenance(
                     source="background_processor",
-                    raw={"background_strategy": "blurred_raster_underlay"},
+                    raw={"background_strategy": "source_raster_underlay"},
                 ),
                 editable_strategy=EditableStrategy.RASTER_IMAGE,
                 asset_path=background_asset,
@@ -211,6 +211,7 @@ class CandidateFusionProcessor:
             )
         )
         shape_candidates = list(base_shapes)
+        _add_container_underlays(slide, im, shape_candidates, asset_root)
         for s in shape_candidates:
             if _is_covered_by_region(
                 s["bbox"],
@@ -311,14 +312,74 @@ def _prepare_background_asset(im: Image.Image, asset_root) -> Path:
     background_dir = asset_root / "backgrounds"
     background_dir.mkdir(parents=True, exist_ok=True)
     background_path = background_dir / "background_underlay.png"
-    # Preserve coarse page color/frame/texture while suppressing foreground glyphs
-    # and icons, so editable OCR/icon layers do not visually double with the source.
-    blurred = im.convert("RGB").filter(ImageFilter.GaussianBlur(radius=8))
-    white = Image.new("RGB", blurred.size, "#ffffff")
-    underlay = Image.blend(blurred, white, 0.35)
+    # Use a high-fidelity source underlay instead of an aggressively blurred wash.
+    # The editable native layers remain on top, while the source underlay preserves
+    # complex slide texture, panel boundaries, shadows, and small decorative marks
+    # that the current native reconstruction cannot reliably reproduce yet.
+    underlay = im.convert("RGB")
     underlay.save(background_path)
     return background_path
 
+
+
+def _add_container_underlays(
+    slide: SlideIR, im: Image.Image, shape_candidates: list[dict], asset_root: Path
+) -> None:
+    underlay_dir = asset_root / "container_underlays"
+    for index, candidate in enumerate(shape_candidates):
+        if not _should_add_container_underlay(candidate):
+            continue
+        bbox = _bounded_bbox(candidate.get("bbox", []), im.width, im.height)
+        if not bbox:
+            continue
+        x1, y1, x2, y2 = bbox
+        if (x2 - x1) * (y2 - y1) <= 0:
+            continue
+        underlay_dir.mkdir(parents=True, exist_ok=True)
+        path = underlay_dir / f"{_safe_asset_name(candidate.get('id') or f'container_{index}')}.png"
+        im.crop((int(x1), int(y1), int(x2), int(y2))).save(path)
+        slide.elements.append(
+            SlideElement(
+                id=f"{candidate.get('id', f'container_{index}')}_underlay",
+                type=ElementType.UNKNOWN_PATCH,
+                bbox=Rect(x=x1, y=y1, width=x2 - x1, height=y2 - y1),
+                z_index=6,
+                confidence=float(candidate.get("confidence", 0.5)),
+                provenance=Provenance(
+                    source="container_underlay",
+                    raw={"container": candidate, "asset_path": str(path)},
+                ),
+                editable_strategy=EditableStrategy.RESIDUAL_PATCH,
+                asset_path=path,
+            )
+        )
+
+
+def _should_add_container_underlay(candidate: dict) -> bool:
+    kind = str(candidate.get("kind") or candidate.get("semantic_type") or "").lower()
+    source = str(candidate.get("source") or "").lower()
+    bbox = candidate.get("bbox", [])
+    if len(bbox) != 4:
+        return False
+    if kind in {"image_candidate", "panel", "card", "group", "container"}:
+        return True
+    return source in {"layout", "layout_model", "sam3"} and bool(candidate.get("source_id"))
+
+
+def _bounded_bbox(bbox: list[float], width: int, height: int) -> list[float] | None:
+    if len(bbox) != 4:
+        return None
+    x1 = max(0.0, min(float(width), float(bbox[0])))
+    y1 = max(0.0, min(float(height), float(bbox[1])))
+    x2 = max(0.0, min(float(width), float(bbox[2])))
+    y2 = max(0.0, min(float(height), float(bbox[3])))
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return [x1, y1, x2, y2]
+
+
+def _safe_asset_name(value: object) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value)).strip("_") or "asset"
 
 def _split_text_candidates_for_layout(text_candidates: list[dict]) -> list[dict]:
     split: list[dict] = []

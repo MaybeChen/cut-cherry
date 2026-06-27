@@ -56,7 +56,7 @@ def build_layers(
     assets = [_with_parent(asset, containers) for asset in assets]
     connectors = [_with_connector_parent(connector, containers) for connector in connector_regions]
     return {
-        "background": {"strategy": "blurred_raster_underlay"},
+        "background": {"strategy": "source_raster_underlay"},
         "containers": containers,
         "texts": texts,
         "assets": assets,
