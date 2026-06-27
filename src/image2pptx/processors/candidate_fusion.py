@@ -186,10 +186,7 @@ class CandidateFusionProcessor:
         base_shapes = (
             list(layers.get("containers", [])) if layers else ctx.candidates.get("shapes", [])
         )
-        shape_candidates = [
-            *base_shapes,
-            *_synthesize_supporting_cards(ctx, im, base_shapes, text_candidates),
-        ]
+        shape_candidates = list(base_shapes)
         for s in shape_candidates:
             if _is_covered_by_region(
                 s["bbox"],
@@ -329,56 +326,6 @@ def _merge_raw_text_group(source_block: dict, group: list[dict]) -> dict:
         "source_ids": [item.get("id", "text") for item in group],
         "raw_items": group,
     }
-
-
-def _synthesize_supporting_cards(
-    ctx: PipelineContext, im: Image.Image, existing_shapes: list[dict], text_candidates: list[dict]
-) -> list[dict]:
-    cards: list[dict] = []
-    right_texts = [
-        block
-        for block in text_candidates
-        if len(block.get("bbox", [])) == 4
-        and block["bbox"][0] >= im.width * 0.68
-        and block["bbox"][1] <= im.height * 0.84
-    ]
-    if right_texts:
-        panel_bbox = _expanded_bbox(
-            _union_bbox([block["bbox"] for block in right_texts]),
-            pad_x=28,
-            pad_y=42,
-            width=im.width,
-            height=im.height,
-        )
-        if not _is_covered_by_region(panel_bbox, existing_shapes, min_ratio=0.65):
-            cards.append(
-                {
-                    "id": "synthetic_right_panel",
-                    "kind": "roundRect",
-                    "bbox": panel_bbox,
-                    "fill_color": "#ffffff",
-                    "line_color": "#e4edf6",
-                    "confidence": 0.45,
-                    "source": "candidate_fusion_synthetic",
-                }
-            )
-    for block in text_candidates:
-        text = str(block.get("text", "")).lower()
-        if not any(token in text for token in ("from ambition", "executable", "patterns")):
-            continue
-        bbox = _expanded_bbox(block.get("bbox", []), 14, 10, im.width, im.height)
-        cards.append(
-            {
-                "id": f"synthetic_callout_{len(cards)}",
-                "kind": "roundRect",
-                "bbox": bbox,
-                "fill_color": "#fff3e6",
-                "line_color": "#f2a85f",
-                "confidence": 0.42,
-                "source": "candidate_fusion_synthetic",
-            }
-        )
-    return cards
 
 
 def _text_style_for_block(block: dict, shapes: list[dict]) -> ElementStyle:

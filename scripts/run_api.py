@@ -1,2 +1,5 @@
 from image2pptx.api.app import main
-if __name__ == "__main__": main()
+
+
+if __name__ == "__main__":
+    main()
