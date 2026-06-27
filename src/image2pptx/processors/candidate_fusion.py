@@ -16,6 +16,7 @@ from image2pptx.ir.elements import (
     SlideElement,
 )
 from image2pptx.ir.slide_ir import SlideIR
+from image2pptx.ir.candidates import ElementGroup, build_element_groups, grouped_candidates
 from image2pptx.models.rmbg import RmbgAdapter
 from image2pptx.core.errors import PipelineStageError, format_stage_failure
 from image2pptx.pipeline.context import PipelineContext
@@ -28,11 +29,16 @@ class CandidateFusionProcessor:
         layers = (
             ctx.candidates.get("layers") if isinstance(ctx.candidates.get("layers"), dict) else {}
         )
+        element_groups = _element_groups_for_fusion(ctx, layers)
         layout_regions = ctx.candidates.get("layout_regions", [])
-        table_regions = [r for r in layout_regions if r.get("kind") == "table_candidate"]
+        table_regions = (
+            grouped_candidates(element_groups, ElementGroup.TABLE)
+            if element_groups
+            else [r for r in layout_regions if r.get("kind") == "table_candidate"]
+        )
         image_regions = (
-            list(layers.get("assets", []))
-            if layers
+            grouped_candidates(element_groups, ElementGroup.ASSET)
+            if element_groups
             else [
                 r
                 for r in layout_regions
@@ -42,8 +48,16 @@ class CandidateFusionProcessor:
         asset_image_regions, structural_image_regions = _split_asset_image_regions(
             ctx, image_regions, im
         )
-        formula_regions = ctx.candidates.get("formulas", [])
-        chart_regions = ctx.candidates.get("charts", [])
+        formula_regions = (
+            grouped_candidates(element_groups, ElementGroup.FORMULA)
+            if element_groups
+            else ctx.candidates.get("formulas", [])
+        )
+        chart_regions = (
+            grouped_candidates(element_groups, ElementGroup.CHART)
+            if element_groups
+            else ctx.candidates.get("charts", [])
+        )
         asset_root = ctx.job_dir / "assets"
         asset_root.mkdir(parents=True, exist_ok=True)
         background_asset = _prepare_background_asset(im, asset_root)
@@ -178,13 +192,23 @@ class CandidateFusionProcessor:
                 )
             )
         text_source = (
-            list(layers.get("texts", []))
-            if layers
-            else (ctx.candidates.get("text_blocks") or ctx.candidates.get("text", []))
+            grouped_candidates(element_groups, ElementGroup.TEXT)
+            if element_groups
+            else (
+                list(layers.get("texts", []))
+                if layers
+                else (ctx.candidates.get("text_blocks") or ctx.candidates.get("text", []))
+            )
         )
         text_candidates = _split_text_candidates_for_layout(text_source)
         base_shapes = (
-            list(layers.get("containers", [])) if layers else ctx.candidates.get("shapes", [])
+            grouped_candidates(element_groups, ElementGroup.CONTAINER)
+            if element_groups
+            else (
+                list(layers.get("containers", []))
+                if layers
+                else ctx.candidates.get("shapes", [])
+            )
         )
         shape_candidates = list(base_shapes)
         for s in shape_candidates:
@@ -240,7 +264,13 @@ class CandidateFusionProcessor:
                 )
             )
         connector_source = (
-            list(layers.get("connectors", [])) if layers else ctx.candidates.get("connectors", [])
+            grouped_candidates(element_groups, ElementGroup.CONNECTOR)
+            if element_groups
+            else (
+                list(layers.get("connectors", []))
+                if layers
+                else ctx.candidates.get("connectors", [])
+            )
         )
         for c in _semantic_connectors(connector_source, shape_candidates, text_candidates, im)[:35]:
             (x1, y1), (x2, y2) = c["points"]
@@ -264,6 +294,17 @@ class CandidateFusionProcessor:
         slide.validate_scene()
         slide.relations.extend(slide.find_overlaps(0.2))
         return slide
+
+
+def _element_groups_for_fusion(ctx: PipelineContext, layers: dict) -> dict:
+    element_groups = ctx.candidates.get("element_groups")
+    if isinstance(element_groups, dict) and element_groups:
+        return element_groups
+    if layers:
+        element_groups = build_element_groups(layers, ctx.candidates)
+        ctx.candidates["element_groups"] = element_groups
+        return element_groups
+    return {}
 
 
 def _prepare_background_asset(im: Image.Image, asset_root) -> Path:

@@ -13,9 +13,9 @@
 4. `text` / `text_layer`：PaddleOCR 文本识别与文本层归一化。
 5. `layout`：layout 模型与规则区域融合。
 6. `table` / `formula` / `chart`：专项结构候选。
-7. `layer_decomposition`：按 background、container、text、asset、connector 分层。
-8. `vlm_arbitration`：可选 VLM 语义仲裁。
-9. `candidate_fusion`：融合候选为 SlideIR，并导出资产。
+7. `layer_decomposition`：按 background、container、text、asset、connector 分层，并生成统一 `element_groups` 协议。
+8. `vlm_arbitration`：可选 VLM 语义仲裁；仲裁后重建 `element_groups`，避免图层与元素组漂移。
+9. `candidate_fusion`：以 `element_groups` 为主线，按 table/asset/formula/chart/container/text/connector 顺序融合为 SlideIR，并导出资产。
 10. `pptx_render`：用 `python-pptx` 输出 `result.pptx`。
 
 优点：
@@ -26,8 +26,8 @@
 
 当前核心问题：
 
-- 候选协议仍偏松散：各 processor 往 `ctx.candidates` 写入不同 dict，融合阶段需要猜字段、猜来源。
-- `CandidateFusionProcessor` 仍承担过多职责：资产裁剪、结构过滤、文本拆分、样式估计、connector 过滤、SlideIR 组装都集中在一个文件。
+- 已新增 `CandidateElement` / `ElementGroup` 统一候选协议，`layer_decomposition` 会把 legacy candidates 适配为 `element_groups`，使 pipeline 主线从松散 dict 转向元素组/图层。
+- `CandidateFusionProcessor` 已优先消费 `element_groups`，但仍承担资产裁剪、结构过滤、文本拆分、样式估计、connector 过滤、SlideIR 组装等职责，后续还需要拆成分组 fusion 子模块。
 - PPTX native renderer 仍是短板：shape/connector/text ownership/style mapping 还不足以达到 Edit-Banana 展示的“每个元素独立可编辑”。
 - 质量闭环未成为默认主路径：缺少稳定的 debug bundle、render-back preview、diff heatmap、bad-region refinement。
 - 已清理掉一个不应进入通用管线的样例特化逻辑：`candidate_fusion` 之前会根据右侧文本位置和特定英文 token 合成卡片/标注框，这类 fixture-specific heuristic 会污染真实输入，现已删除。
@@ -37,7 +37,7 @@
 | 维度 | 当前 image2pptx | Edit-Banana 公开实现 | 差距 |
 | --- | --- | --- | --- |
 | 输出目标 | PPTX，强调 Office 原生可编辑 | DrawIO XML，强调图表元素可拖拽、改样式、替换模板 | PPTX native mapping 更难，需要更强 render plan |
-| 主分割路径 | SAM3 是可选候选来源之一 | SAM3 是主路径，支持 prompt group：image / arrow / shape / background | 我们缺少 group-first 的候选契约和 per-group 质量统计 |
+| 主分割路径 | SAM3 是可选候选来源之一，输出会被适配进 `element_groups` | SAM3 是主路径，支持 prompt group：image / arrow / shape / background | 我们已有 group-first 中间协议，但仍缺少 per-group 质量统计与 SAM3 prompt group 驱动 |
 | 文本路径 | OCR → text blocks → text layer → fusion | OCR 先生成 text-only DrawIO，再与 SAM3 空间 merge | 我们缺少可单独评估的 text-only 产物和文本召回 proxy |
 | 公式 | 有公式候选与 Office Math 策略 | Pix2Text + high-res crop-guided strategy | 我们缺少 crop provenance、公式识别置信度与局部重跑 |
 | 中间产物 | 有 artifacts 和 asset manifest，但索引不统一 | 输出 text-only XML、SAM3 visualization、metadata、metric/refinement 结果 | 我们需要统一 debug/index.json 和 overlay 集合 |
@@ -70,7 +70,7 @@
 
 ### Phase 2：CandidateElement / ElementGroup 统一候选协议
 
-建议新增统一 schema：
+当前已新增统一 schema，并由 `layer_decomposition` 生成 `ctx.candidates["element_groups"]`：
 
 ```python
 class CandidateElement(BaseModel):
@@ -85,7 +85,7 @@ class CandidateElement(BaseModel):
     provenance: dict[str, Any] = {}
 ```
 
-实施：让 SAM3、OCR、layout、geometry、table、formula、chart 都输出或适配到该协议；CandidateFusion 只消费统一 candidates。
+实施进度：当前由 layer decomposition 统一适配 SAM3、OCR、layout、geometry、table、formula、chart 等 legacy candidates；CandidateFusion 已优先消费 `element_groups`。下一步是让各 processor 原生输出 `CandidateElement`，并逐步移除 fusion 对 legacy dict 的 fallback。
 
 ### Phase 3：分组融合重构
 
